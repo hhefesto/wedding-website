@@ -36,7 +36,7 @@ bodyW = do
 
 heroSection :: DomBuilder t m => m ()
 heroSection =
-  sec "hero" "images/hero.jpg" $ do
+  sec "hero" "images/hero.png" $ do
     elAttr "div" ("class" =: "spacer") blank
     elAttr "div" ("class" =: "hero-names") $ do
       elAttr "span" ("class" =: "hero-name") $ text "Daniel y"
@@ -56,7 +56,7 @@ heroSection =
 
 ubicacionSection :: DomBuilder t m => m ()
 ubicacionSection =
-  sec "ubicacion" "images/ubicacion.jpg" $ do
+  sec "ubicacion" "images/ubicacion.png" $ do
     elAttr "p" ("class" =: "label label-right") $ text "UBICACIÓN"
     elAttr "div" ("class" =: "glass blob") $ do
       el "p" $ text "Gran Terraza"
@@ -73,16 +73,20 @@ ubicacionSection =
 
 dressCodeSection :: DomBuilder t m => m ()
 dressCodeSection =
-  sec "dress-code" "images/dress-code.jpg" $ do
+  sec "dress-code" "images/dress-code.png" $ do
     elAttr "p" ("class" =: "label label-center") $ text "DRESS CODE"
     elAttr "div" ("class" =: "glass rect") $ do
       el "p" $ text "Formal"
       el "p" $ text "H: traje y corbata"
       el "p" $ text "M: corto, midi, largo"
+    -- Separate collage overlay (optional). Use onerror to hide gracefully
+    -- when the file is not present (dress-code.png already contains the
+    -- people composite from the prototype).
     elAttr "img"
-      ( "class" =: "collage"
-     <> "src"   =: "images/dress-collage.jpg"
-     <> "alt"   =: ""
+      ( "class"   =: "collage"
+     <> "src"     =: "images/dress-collage.png"
+     <> "alt"     =: ""
+     <> "onerror" =: "this.style.display='none'"
       ) blank
     elAttr "div" ("class" =: "spacer") blank
 
@@ -90,7 +94,7 @@ dressCodeSection =
 
 rsvpSection :: DomBuilder t m => m ()
 rsvpSection =
-  sec "rsvp" "images/rsvp.jpg" $ do
+  sec "rsvp" "images/rsvp.png" $ do
     elAttr "p" ("class" =: "label label-center") $ text "RSVP"
     elAttr "div" ("class" =: "glass rect") $ do
       el "p" $ text "Por favor confirma tu asistencia"
@@ -110,7 +114,7 @@ rsvpSection =
 
 mesaRegalosSection :: DomBuilder t m => m ()
 mesaRegalosSection =
-  sec "mesa-regalos" "images/mesa-regalos.jpg" $ do
+  sec "mesa-regalos" "images/mesa-regalos.png" $ do
     elAttr "div" ("class" =: "glass rect mesa") $ do
       elAttr "p" ("class" =: "mesa-label") $ text "MESA DE REGALOS"
       el "p" $ text "Liverpool  51981423"
@@ -123,7 +127,7 @@ mesaRegalosSection =
 
 closingSection :: DomBuilder t m => m ()
 closingSection =
-  sec "closing" "images/closing.jpg" $ do
+  sec "closing" "images/closing.png" $ do
     elAttr "div" ("class" =: "spacer") blank
     elAttr "div" ("class" =: "closing-text") $ do
       elAttr "span" ("class" =: "closing-line") $ text "\xa1Nos vemos el"
