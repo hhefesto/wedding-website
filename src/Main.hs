@@ -36,7 +36,7 @@ bodyW = do
 
 heroSection :: DomBuilder t m => m ()
 heroSection =
-  sec "hero" "images/hero.png" $ do
+  sec "hero" $ do
     elAttr "div" ("class" =: "spacer") blank
     elAttr "div" ("class" =: "hero-names") $ do
       elAttr "span" ("class" =: "hero-name") $ text "Daniel y"
@@ -56,7 +56,7 @@ heroSection =
 
 ubicacionSection :: DomBuilder t m => m ()
 ubicacionSection =
-  sec "ubicacion" "images/ubicacion.png" $ do
+  sec "ubicacion" $ do
     elAttr "p" ("class" =: "label label-right") $ text "UBICACIÓN"
     elAttr "div" ("class" =: "glass blob") $ do
       el "p" $ text "Gran Terraza"
@@ -73,7 +73,7 @@ ubicacionSection =
 
 dressCodeSection :: DomBuilder t m => m ()
 dressCodeSection =
-  sec "dress-code" "images/dress-code.png" $ do
+  sec "dress-code" $ do
     elAttr "p" ("class" =: "label label-center") $ text "DRESS CODE"
     elAttr "div" ("class" =: "glass rect") $ do
       el "p" $ text "Formal"
@@ -94,7 +94,7 @@ dressCodeSection =
 
 rsvpSection :: DomBuilder t m => m ()
 rsvpSection =
-  sec "rsvp" "images/rsvp.png" $ do
+  sec "rsvp" $ do
     elAttr "p" ("class" =: "label label-center") $ text "RSVP"
     elAttr "div" ("class" =: "glass rect") $ do
       el "p" $ text "Por favor confirma tu asistencia"
@@ -114,7 +114,7 @@ rsvpSection =
 
 mesaRegalosSection :: DomBuilder t m => m ()
 mesaRegalosSection =
-  sec "mesa-regalos" "images/mesa-regalos.png" $ do
+  sec "mesa-regalos" $ do
     elAttr "div" ("class" =: "glass rect mesa") $ do
       elAttr "p" ("class" =: "mesa-label") $ text "MESA DE REGALOS"
       el "p" $ text "Liverpool  51981423"
@@ -127,7 +127,7 @@ mesaRegalosSection =
 
 closingSection :: DomBuilder t m => m ()
 closingSection =
-  sec "closing" "images/closing.png" $ do
+  sec "closing" $ do
     elAttr "div" ("class" =: "spacer") blank
     elAttr "div" ("class" =: "closing-text") $ do
       elAttr "span" ("class" =: "closing-line") $ text "\xa1Nos vemos el"
@@ -135,12 +135,11 @@ closingSection =
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
-sec :: DomBuilder t m => Text -> Text -> m () -> m ()
-sec sid img =
+sec :: DomBuilder t m => Text -> m () -> m ()
+sec sid =
   elAttr "section"
     ( "id"    =: sid
    <> "class" =: "section"
-   <> "style" =: ("background-image:url(" <> img <> ")")
     )
 
 navA :: DomBuilder t m => Text -> Text -> m ()
@@ -193,13 +192,13 @@ siteCSS = T.unlines
   -- Dress-code: much stronger amber overlay, matching prototype 3
   , "#dress-code::before { background: rgba(52,28,4,.62); }"
   , ""
-  -- Fallback colours shown when background images are not yet placed
-  , "#hero         { background-color: #3d2e22; }"
-  , "#ubicacion    { background-color: #2e3a28; }"
-  , "#dress-code   { background-color: #4a3010; }"
-  , "#rsvp         { background-color: #2a3035; }"
-  , "#mesa-regalos { background-color: #382e24; }"
-  , "#closing      { background-color: #4a3220; }"
+  -- Background images (section IDs → image paths)
+  , "#hero         { background-image: url('images/hero.png');         background-color: #3d2e22; }"
+  , "#ubicacion    { background-image: url('images/ubicacion.png');    background-color: #2e3a28; }"
+  , "#dress-code   { background-image: url('images/dress-code.png');   background-color: #4a3010; }"
+  , "#rsvp         { background-image: url('images/rsvp.png');         background-color: #2a3035; }"
+  , "#mesa-regalos { background-image: url('images/mesa-regalos.png'); background-color: #382e24; }"
+  , "#closing      { background-image: url('images/closing.png');      background-color: #4a3220; }"
   , ""
   -- Flex spacer
   , ".spacer { flex: 1; }"

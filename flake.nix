@@ -60,15 +60,15 @@
         } ''
           mkdir -p "$out/images"
 
+          # GHCJS compiled output first (rts.js lib.js out.js runmain.js …)
+          rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
+            ${ghcjsBuild}/bin/wedding-frontend.jsexe/ "$out/"
+
           # Static assets (images etc.) — rsync --no-perms keeps $out writable
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${publicAssets}/ "$out/"
 
-          # HTML shell
+          # Our HTML shell overwrites any index.html from the jsexe bundle
           install -m644 ${./index.html} "$out/index.html"
-
-          # GHCJS compiled output (rts.js lib.js out.js runmain.js …)
-          rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
-            ${ghcjsBuild}/bin/wedding-frontend.jsexe/ "$out/"
         '';
       in {
         # ── Packages ────────────────────────────────────────────────────────
