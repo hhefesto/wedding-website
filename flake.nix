@@ -1,117 +1,93 @@
 {
-  description = "Wedding website (PureScript + Halogen, reproducible)";
-
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs";
-    flake-parts.url = "github:hercules-ci/flake-parts";
-
-    purescript-overlay = {
-      url = "github:thomashoneyman/purescript-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    mkSpagoDerivation.url = "github:jeslie0/mkSpagoDerivation";
+  nixConfig = {
+    allow-import-from-derivation = true;
+    extra-substituters          = [ "https://nixcache.reflex-frp.org" ];
+    extra-trusted-public-keys   = [
+      "ryantrinkle.com-1:JJiAKaRv9mwhkerZRpQmMkMsk+p2JXCetKFVJFgZB6Y="
+    ];
   };
 
-  outputs = inputs@{ nixpkgs, flake-parts, purescript-overlay, mkSpagoDerivation, ... }:
+  inputs = {
+    nixpkgs.url    = "github:NixOS/nixpkgs/nixos-24.05";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+
+    # reflex-platform provides a ready-made GHCJS + reflex-dom package set
+    reflex-platform = {
+      url   = "github:reflex-frp/reflex-platform";
+      flake = false;
+    };
+  };
+
+  outputs = inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      systems = [ "x86_64-linux" "aarch64-linux" ];
 
-      perSystem = { system, self', ... }: let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [
-            mkSpagoDerivation.overlays.default
-            purescript-overlay.overlays.default
-          ];
-        };
-      in {
-        _module.args.pkgs = pkgs;
+      perSystem = { self', system, ... }:
+      let
+        pkgs = import inputs.nixpkgs { inherit system; };
 
-        devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            spago-unstable
-            purs-unstable
-            esbuild
-            nodejs
-            watchexec
-            jq
-            darkhttpd
-            imagemagick
-            scrot
-            # nodePackages.purescript-language-server
-          ];
-          shellHook = ''
-            echo "Wedding Website (PureScript + Halogen)"
-            echo "• spago build        - typecheck/compile"
-            echo "• spago bundle       - bundle to index.js"
-            echo "• nix run            - build & serve at localhost:3000"
-          '';
-        };
+        # Import reflex-platform for its GHCJS package set
+        rp = import inputs.reflex-platform { inherit system; };
 
-        packages = {
-          website = pkgs.mkSpagoDerivation {
-            src = ./.;
-            spagoYaml = ./spago.yaml;
-            spagoLock = ./spago.lock;
-
-            version = "0.1.0";
-            nativeBuildInputs = with pkgs; [ spago-unstable purs-unstable esbuild ];
-
-            buildPhase = ''
-              set -euo pipefail
-              export HOME="$PWD/.nix-build-home"
-              spago bundle
-            '';
-
-            installPhase = ''
-              set -euo pipefail
-              mkdir -p "$out"
-              if [ -d public ]; then
-                cp -r public/* "$out"/
-              else
-                cat > "$out/index.html" <<'HTML'
-              <!doctype html>
-              <html lang="en">
-              <head>
-                <meta charset="utf-8"/>
-                <meta name="viewport" content="width=device-width, initial-scale=1"/>
-                <title>Our Wedding</title>
-              </head>
-              <body>
-                <div id="root"></div>
-                <script type="module" src="./index.js"></script>
-              </body>
-              </html>
-              HTML
-              fi
-              cp index.js "$out"/
-              [ -d assets ] && cp -r assets "$out"/
-            '';
+        project = rp.project ({ ... }: {
+          packages = {
+            wedding-frontend = ./frontend;
           };
+          shells = {
+            ghc   = [ "wedding-frontend" ];
+            ghcjs = [ "wedding-frontend" ];
+          };
+        });
 
-          default = self'.packages.website;
-        };
+        # GHCJS-compiled Haskell → .jsexe bundle
+        ghcjsBuild = project.ghcjs.wedding-frontend;
 
+        # Static website: index.html + GHCJS JS files + public assets
+        website = pkgs.runCommand "wedding-website" {
+          nativeBuildInputs = [ pkgs.rsync ];
+        } ''
+          mkdir -p "$out"
+
+          # Static assets from public/ (rsync --no-perms avoids nix-store read-only leaking)
+          rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${./public}/ "$out/"
+
+          # HTML shell
+          install -m644 ${./frontend/index.html} "$out/index.html"
+
+          # GHCJS compiled output (rts.js lib.js out.js runmain.js …)
+          rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
+            ${ghcjsBuild}/bin/wedding-frontend.jsexe/ "$out/"
+        '';
+      in {
+        # ── Packages ────────────────────────────────────────────────────────
+        packages.website = website;
+        packages.default = website;
+
+        # ── Dev shell (GHC + cabal, jsaddle-warp browser preview) ──────────
+        devShells.default = project.shells.ghc;
+
+        # ── Apps ────────────────────────────────────────────────────────────
+
+        # `nix run` → build static site and serve it locally with darkhttpd
         apps.default = {
-          type = "app";
-          program = "${pkgs.writeShellScript "serve-wedding" ''
-            ${pkgs.darkhttpd}/bin/darkhttpd ${self'.packages.website} --port 3000
-          ''}";
+          type    = "app";
+          program = toString (pkgs.writeShellScript "serve-wedding" ''
+            echo "Wedding website served at http://localhost:3000"
+            exec ${pkgs.darkhttpd}/bin/darkhttpd ${self'.packages.website} --port 3000
+          '');
         };
 
-        checks = {
-          typecheck = pkgs.runCommand "purescript-typecheck" {
-            nativeBuildInputs = with pkgs; [ spago-unstable purs-unstable ];
-          } ''
-            set -euo pipefail
-            cp -r ${./.} ./
-            chmod -R +w .
-            export HOME="$PWD/.nix-build-home"
-            spago build
-            touch "$out"
-          '';
-          bundle = self'.packages.website;
-        };
+        # ── Checks ──────────────────────────────────────────────────────────
+
+        # Ensures the GHCJS static build succeeds
+        checks.website = self'.packages.website;
+
+        # Ensures darkhttpd + the website package are both available
+        checks.default-app = pkgs.runCommand "check-default-app" {} ''
+          test -f ${pkgs.darkhttpd}/bin/darkhttpd
+          test -d ${self'.packages.website}
+          mkdir -p "$out"
+        '';
       };
     };
 }

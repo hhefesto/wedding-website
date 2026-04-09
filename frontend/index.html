@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daniel y Ana Cristina — 10 · 10 · 26</title>
+
+  <!-- Fonts: Great Vibes (script) + Courier Prime (mono body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Courier Prime', 'Courier New', monospace;
+      background: #1c1410;
+      color: #f0ebe0;
+      overflow-x: hidden;
+    }
+
+    /* ── Shared section shell ── */
+    .section {
+      position: relative;
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      overflow: hidden;
+    }
+
+    /* warm dark scrim over every section */
+    .section::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(20, 14, 8, 0.18) 0%,
+        rgba(20, 14, 8, 0.32) 100%
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* fallback bg colours when images are missing */
+    #hero          { background-color: #3d2e22; }
+    #ubicacion     { background-color: #2e3a28; }
+    #dress-code    { background-color: #3a2e1e; }
+    #rsvp          { background-color: #2a3035; }
+    #mesa-regalos  { background-color: #382e24; }
+    #closing       { background-color: #4a3220; }
+
+    /* ── Script font ── */
+    .script {
+      font-family: 'Great Vibes', cursive;
+      font-weight: 400;
+    }
+
+    /* ══════════════════════════════════════════════════
+       HERO  (prototype 1)
+    ══════════════════════════════════════════════════ */
+    .hero__body {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 0 2rem 0.5rem;
+    }
+
+    .hero__names {
+      font-size: clamp(3.8rem, 16vw, 7.5rem);
+      line-height: 0.92;
+      color: #fff;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
+      letter-spacing: -0.01em;
+    }
+
+    .hero__date {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      letter-spacing: 0.3em;
+      font-size: 0.72rem;
+      color: rgba(255, 255, 255, 0.88);
+      padding: 1.1rem 0 0.9rem;
+    }
+
+    .hero__nav {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-around;
+      padding: 0.9rem 0.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .hero__nav-link {
+      color: rgba(255, 255, 255, 0.82);
+      text-decoration: none;
+      font-size: 0.62rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      padding: 0.25rem;
+      transition: color 0.2s ease;
+    }
+    .hero__nav-link:hover { color: #fff; }
+
+    /* ══════════════════════════════════════════════════
+       SECTION LABELS
+    ══════════════════════════════════════════════════ */
+    .section__label {
+      position: relative;
+      z-index: 1;
+      font-size: 0.68rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.9);
+      padding: 2.2rem 2rem 0;
+    }
+    .section__label--center { text-align: center; }
+    .section__label--right  { text-align: right;  }
+
+    /* ══════════════════════════════════════════════════
+       GLASS CARD  (ubicacion, dress-code, rsvp, mesa)
+    ══════════════════════════════════════════════════ */
+    .glass-card {
+      position: relative;
+      z-index: 1;
+      background: rgba(160, 128, 96, 0.22);
+      backdrop-filter: blur(16px) saturate(1.3);
+      -webkit-backdrop-filter: blur(16px) saturate(1.3);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 20px;
+      padding: 2rem 2.4rem;
+      margin: 1.4rem 2rem;
+      line-height: 2;
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.92);
+      max-width: 340px;
+    }
+
+    /* ── RSVP card variant ── */
+    .glass-card--rsvp {
+      max-width: 400px;
+      margin: 1.4rem auto;
+      text-align: center;
+    }
+
+    .rsvp__text {
+      margin-bottom: 1.6rem;
+      line-height: 1.75;
+      font-size: 0.88rem;
+    }
+
+    .rsvp__btn {
+      display: inline-block;
+      color: #fff;
+      text-decoration: none;
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      border-radius: 6px;
+      padding: 0.55rem 1.4rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      transition: background 0.2s ease;
+    }
+    .rsvp__btn:hover { background: rgba(255, 255, 255, 0.14); }
+
+    /* ══════════════════════════════════════════════════
+       DRESS COLLAGE  (prototype 3 — optional image)
+    ══════════════════════════════════════════════════ */
+    .dress-collage {
+      position: relative;
+      z-index: 1;
+      display: block;
+      width: calc(100% - 4rem);
+      max-width: 420px;
+      margin: 0.5rem 2rem 2rem;
+      border-radius: 12px;
+      object-fit: cover;
+      /* hide gracefully when the image file is not yet provided */
+      min-height: 0;
+    }
+    /* hide broken-image icon when src doesn't exist */
+    .dress-collage:not([src]),
+    .dress-collage[src=""] { display: none; }
+
+    /* ══════════════════════════════════════════════════
+       CLOSING  (prototype 5)
+    ══════════════════════════════════════════════════ */
+    .closing__body {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 0 2rem 4rem;
+    }
+
+    .closing__msg {
+      font-size: clamp(3.2rem, 13vw, 6.5rem);
+      line-height: 0.93;
+      color: #fff;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+    }
+
+    /* ══════════════════════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════════════════════ */
+    @media (min-width: 600px) {
+      .hero__names    { font-size: clamp(5rem, 12vw, 8rem); }
+      .glass-card     { padding: 2.4rem 3rem; }
+      .closing__msg   { font-size: clamp(4rem, 10vw, 7rem); }
+    }
+  </style>
+</head>
+<body>
+  <!--
+    Images go in public/images/:
+      hero.jpg          — hero section (prototype 1)
+      ubicacion.jpg     — location section (prototype 2)
+      dress-code.jpg    — dress code section (prototype 3)
+      dress-collage.jpg — optional dress collage (prototype 3, middle)
+      rsvp.jpg          — rsvp section background
+      mesa-regalos.jpg  — registry section (prototype 4)
+      closing.jpg       — closing section (prototype 5)
+  -->
+
+  <!-- GHCJS bundle — order matters -->
+  <script language="javascript" src="rts.js"></script>
+  <script language="javascript" src="lib.js"></script>
+  <script language="javascript" src="out.js"></script>
+  <script language="javascript" src="runmain.js" defer></script>
+</body>
+</html>
