@@ -172,7 +172,7 @@ siteCSS = T.unlines
   , "  min-height: 100svh;"
   , "  display: flex;"
   , "  flex-direction: column;"
-  , "  background-size: cover;"
+  , "  background-size: auto 100%;"
   , "  background-position: center;"
   , "  background-repeat: no-repeat;"
   , "  overflow: hidden;"

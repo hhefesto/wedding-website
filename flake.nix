@@ -84,6 +84,8 @@
         apps.default = {
           type    = "app";
           program = toString (pkgs.writeShellScript "serve-wedding" ''
+            # Kill any previous darkhttpd holding port 3000
+            ${pkgs.psmisc}/bin/fuser -k 3000/tcp 2>/dev/null || true
             echo "Wedding website served at http://localhost:3000"
             exec ${pkgs.darkhttpd}/bin/darkhttpd ${self'.packages.website} --port 3000
           '');
@@ -98,6 +100,21 @@
         checks.default-app = pkgs.runCommand "check-default-app" {} ''
           test -f ${pkgs.darkhttpd}/bin/darkhttpd
           test -d ${self'.packages.website}
+          mkdir -p "$out"
+        '';
+
+        # Ensures all required files are present in the built website
+        checks.website-contents = pkgs.runCommand "check-website-contents" {} ''
+          set -e
+          test -f ${self'.packages.website}/index.html  || (echo "MISSING index.html"; exit 1)
+          test -f ${self'.packages.website}/rts.js      || (echo "MISSING rts.js"; exit 1)
+          test -f ${self'.packages.website}/out.js      || (echo "MISSING out.js"; exit 1)
+          test -f ${self'.packages.website}/lib.js      || (echo "MISSING lib.js"; exit 1)
+          test -d ${self'.packages.website}/images      || (echo "MISSING images/"; exit 1)
+          for img in hero.png ubicacion.png dress-code.png rsvp.png mesa-regalos.png closing.png; do
+            test -f ${self'.packages.website}/images/$img \
+              || (echo "MISSING images/$img"; exit 1)
+          done
           mkdir -p "$out"
         '';
       };
