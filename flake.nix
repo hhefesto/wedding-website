@@ -31,7 +31,7 @@
 
         project = rp.project ({ ... }: {
           packages = {
-            wedding-frontend = ./frontend;
+            wedding-frontend = ./.;
           };
           shells = {
             ghc   = [ "wedding-frontend" ];
@@ -52,7 +52,7 @@
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${./public}/ "$out/"
 
           # HTML shell
-          install -m644 ${./frontend/index.html} "$out/index.html"
+          install -m644 ${./index.html} "$out/index.html"
 
           # GHCJS compiled output (rts.js lib.js out.js runmain.js …)
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
