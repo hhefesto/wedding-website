@@ -42,14 +42,26 @@
         # GHCJS-compiled Haskell → .jsexe bundle
         ghcjsBuild = project.ghcjs.wedding-frontend;
 
+        # Gather public/ assets into the nix store.
+        # We use builtins.path so the derivation does not fail when the
+        # directory contains only empty subdirs (e.g. images/ before photos
+        # are added).  The filter keeps real files and skips .gitkeep.
+        publicAssets = builtins.path {
+          name = "wedding-public";
+          path = ./public;
+          filter = path: type:
+            type == "directory" ||
+            (type == "regular" && builtins.baseNameOf path != ".gitkeep");
+        };
+
         # Static website: index.html + GHCJS JS files + public assets
         website = pkgs.runCommand "wedding-website" {
           nativeBuildInputs = [ pkgs.rsync ];
         } ''
-          mkdir -p "$out"
+          mkdir -p "$out/images"
 
-          # Static assets from public/ (rsync --no-perms avoids nix-store read-only leaking)
-          rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${./public}/ "$out/"
+          # Static assets (images etc.) — rsync --no-perms keeps $out writable
+          rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${publicAssets}/ "$out/"
 
           # HTML shell
           install -m644 ${./index.html} "$out/index.html"
