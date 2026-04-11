@@ -84,10 +84,10 @@
         apps.default = {
           type    = "app";
           program = toString (pkgs.writeShellScript "serve-wedding" ''
-            # Kill any previous darkhttpd holding port 3000
-            ${pkgs.psmisc}/bin/fuser -k 3000/tcp 2>/dev/null || true
-            echo "Wedding website served at http://localhost:3000"
-            exec ${pkgs.darkhttpd}/bin/darkhttpd ${self'.packages.website} --port 3000
+            # Kill any previous darkhttpd holding port 3030
+            ${pkgs.psmisc}/bin/fuser -k 3030/tcp 2>/dev/null || true
+            echo "Wedding website served at http://localhost:3030"
+            exec ${pkgs.darkhttpd}/bin/darkhttpd ${self'.packages.website} --port 3030
           '');
         };
 
@@ -115,6 +115,8 @@
             test -f ${self'.packages.website}/images/$img \
               || (echo "MISSING images/$img"; exit 1)
           done
+          test -f ${self'.packages.website}/animations.js \
+            || (echo "MISSING animations.js"; exit 1)
           mkdir -p "$out"
         '';
       };
