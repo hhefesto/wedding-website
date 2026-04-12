@@ -54,6 +54,15 @@
             (type == "regular" && builtins.baseNameOf path != ".gitkeep");
         };
 
+        # Text-free couple photos + dress-code cutouts (1.png–7.png)
+        imagesAssets = builtins.path {
+          name = "wedding-images";
+          path = ./images;
+          filter = path: type:
+            type == "directory" ||
+            (type == "regular" && builtins.baseNameOf path != ".gitkeep");
+        };
+
         # Static website: index.html + GHCJS JS files + public assets
         website = pkgs.runCommand "wedding-website" {
           nativeBuildInputs = [ pkgs.rsync ];
@@ -64,8 +73,11 @@
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
             ${ghcjsBuild}/bin/wedding-frontend.jsexe/ "$out/"
 
-          # Static assets (images etc.) — rsync --no-perms keeps $out writable
+          # Static assets (animations.js, etc.) — rsync --no-perms keeps $out writable
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${publicAssets}/ "$out/"
+
+          # Text-free photos + dress-code cutouts
+          rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${imagesAssets}/ "$out/images/"
 
           # Our HTML shell overwrites any index.html from the jsexe bundle
           install -m644 ${./index.html} "$out/index.html"
@@ -111,7 +123,7 @@
           test -f ${self'.packages.website}/out.js      || (echo "MISSING out.js"; exit 1)
           test -f ${self'.packages.website}/lib.js      || (echo "MISSING lib.js"; exit 1)
           test -d ${self'.packages.website}/images      || (echo "MISSING images/"; exit 1)
-          for img in hero.png ubicacion.png dress-code.png rsvp.png mesa-regalos.png closing.png; do
+          for img in 1.png 2.png 3.png 4.png 5.png 6.png 7.png; do
             test -f ${self'.packages.website}/images/$img \
               || (echo "MISSING images/$img"; exit 1)
           done

@@ -3,6 +3,7 @@ module Main where
 
 import Data.Text (Text)
 import qualified Data.Text as T
+import Control.Monad (forM_)
 import Reflex.Dom
 
 -- ── Entry point ───────────────────────────────────────────────────────────────
@@ -10,16 +11,17 @@ import Reflex.Dom
 main :: IO ()
 main = mainWidgetWithHead headW bodyW
 
--- Everything in <head> comes from Haskell
 headW :: DomBuilder t m => m ()
 headW = do
   el "title" $ text "Daniel y Ana Cristina — 10 · 10 · 26"
   el "style" $ text siteCSS
 
--- ── Sections ──────────────────────────────────────────────────────────────────
+-- ── Body ──────────────────────────────────────────────────────────────────────
 
 bodyW :: DomBuilder t m => m ()
 bodyW = do
+  introOverlay
+  progressBar
   heroSection
   ubicacionSection
   dressCodeSection
@@ -30,8 +32,26 @@ bodyW = do
   rsvpOverlay
   backToTop
 
+-- ── Intro overlay ─────────────────────────────────────────────────────────────
+-- Full-screen panel that plays the invitation text then clip-path reveals hero.
+
+introOverlay :: DomBuilder t m => m ()
+introOverlay =
+  elAttr "div" ("id" =: "intro" <> "class" =: "intro") $
+    elAttr "div" ("class" =: "intro-inner") $ do
+      elAttr "p" ("class" =: "intro-kicker") $
+        text "Te invitamos a nuestra boda"
+      elAttr "span" ("class" =: "intro-rule") blank
+      elAttr "p" ("class" =: "intro-sign") $
+        text "atte. Cristy y Daniel"
+
+-- ── Progress bar ──────────────────────────────────────────────────────────────
+
+progressBar :: DomBuilder t m => m ()
+progressBar =
+  elAttr "div" ("id" =: "progress-bar" <> "class" =: "progress-bar") blank
+
 -- ── Back to top ──────────────────────────────────────────────────────────────
--- Floating glass circle with upward arrow, shown after scrolling past hero.
 
 backToTop :: DomBuilder t m => m ()
 backToTop =
@@ -41,40 +61,45 @@ backToTop =
    <> "aria-label" =: "Volver arriba"
    <> "style"      =: "display:none"
     ) blank
-  -- Arrow is drawn via CSS ::before (two borders + rotate)
 
 -- ── HERO ─────────────────────────────────────────────────────────────────────
--- Prototype 1:
---   • very light scrim over the photo
---   • "Daniel y" / "Ana Cristina" in Great Vibes, large, white, bottom-left
---   • date centered above the nav strip
---   • horizontal nav strip at the very bottom
+-- Clean text-free photo (images/1.png) as inner .hero-bg layer.
+-- Live typography is the sole source of names/date.
 
 heroSection :: DomBuilder t m => m ()
 heroSection =
   sec "hero" $ do
+    elAttr "div" ("class" =: "hero-bg") blank
     elAttr "div" ("class" =: "spacer") blank
     elAttr "div" ("class" =: "hero-names") $ do
       elAttr "span" ("class" =: "hero-name") $ text "Daniel y"
       elAttr "span" ("class" =: "hero-name") $ text "Ana Cristina"
-    elAttr "p" ("class" =: "hero-date") $ text "10/10/26"
-    elAttr "nav" ("class" =: "hero-nav") $ do
-      navA "#ubicacion"     "UBICACIÓN"
+    elAttr "div" ("class" =: "hero-date-wrap") $ do
+      elAttr "div" ("class" =: "hero-date-rule") blank
+      elAttr "p"   ("class" =: "hero-date") $ text "10/10/26"
+      elAttr "div" ("class" =: "hero-date-rule") blank
+    elAttr "nav" ("class" =: "hero-nav" <> "aria-label" =: "Secciones") $ do
+      navA "#ubicacion"     "UBICACI\211N"
       navA "#dress-code"    "DRESS CODE"
       navA "#rsvp"          "RSVP"
       navA "#mesa-regalos"  "MESA DE REGALOS"
       navA "#video-mensaje" "VIDEO"
+    elAttr "div" ("class" =: "scroll-hint" <> "aria-hidden" =: "true") $
+      text "\8595"
 
 -- ── UBICACIÓN ────────────────────────────────────────────────────────────────
--- Prototype 2:
---   • "UBICACIÓN" small label at top-right
---   • large organic blob glass card, left-aligned, upper portion of screen
---   • couple photo fills the lower half (background shows through)
+-- images/2.png (couple in forest path). Marquee ticker at top.
 
 ubicacionSection :: DomBuilder t m => m ()
 ubicacionSection =
   sec "ubicacion" $ do
-    elAttr "p" ("class" =: "label label-right") $ text "UBICACIÓN"
+    elAttr "div" ("class" =: "ubicacion-bg") blank
+    elAttr "div" ("class" =: "marquee" <> "aria-hidden" =: "true") $
+      elAttr "div" ("class" =: "marquee-track") $
+        forM_ [(1::Int)..8] $ \_ ->
+          el "span" $ text
+            "VISTA REAL \xb7 GRAN TERRAZA \xb7 6 PM \xb7 10.10.26 \xa0\xa0"
+    elAttr "p" ("class" =: "label label-right") $ text "UBICACI\211N"
     elAttr "div" ("class" =: "glass blob") $ do
       el "p" $ text "Gran Terraza"
       el "p" $ text "Vista Real Country Club"
@@ -82,26 +107,29 @@ ubicacionSection =
     elAttr "div" ("class" =: "spacer") blank
 
 -- ── DRESS CODE ───────────────────────────────────────────────────────────────
--- Prototype 3:
---   • STRONG warm brown overlay (much darker than other sections)
---   • "DRESS CODE" label top-center
---   • rounded-rect glass card with dress info
---   • dress-collage image below the card (optional)
+-- images/3.png backdrop + suits (6.png) and gowns (7.png) cutout runway.
+-- Pinned clip-path zoom animation reveals everything on scroll.
 
 dressCodeSection :: DomBuilder t m => m ()
 dressCodeSection =
   sec "dress-code" $ do
+    elAttr "div" ("class" =: "dress-bg") blank
     elAttr "p" ("class" =: "label label-center") $ text "DRESS CODE"
-    elAttr "div" ("class" =: "glass rect") $ do
+    elAttr "div" ("class" =: "glass rect dress-info") $ do
       el "p" $ text "Formal"
       el "p" $ text "H: traje y corbata"
       el "p" $ text "M: corto, midi, largo"
-    elAttr "img"
-      ( "class"   =: "collage"
-     <> "src"     =: "images/dress-collage.png"
-     <> "alt"     =: ""
-     <> "onerror" =: "this.style.display='none'"
-      ) blank
+    elAttr "div" ("class" =: "dress-runway") $ do
+      elAttr "img"
+        ( "class" =: "dress-cutout dress-suits"
+       <> "src"   =: "images/6.png"
+       <> "alt"   =: ""
+        ) blank
+      elAttr "img"
+        ( "class" =: "dress-cutout dress-gowns"
+       <> "src"   =: "images/7.png"
+       <> "alt"   =: ""
+        ) blank
     elAttr "div" ("class" =: "spacer") blank
 
 -- ── RSVP ─────────────────────────────────────────────────────────────────────
@@ -114,12 +142,13 @@ rsvpSection =
       el "p" $ text "Por favor confirma tu asistencia"
       el "p" $ text "antes del 10 de septiembre de 2026."
       elAttr "button"
-        ( "class" =: "rsvp-btn"
-       <> "id"    =: "rsvp-open-btn"
+        ( "class"        =: "rsvp-btn"
+       <> "id"           =: "rsvp-open-btn"
+       <> "data-magnetic" =: ""
         ) $ text "Confirmar \8594"
     elAttr "div" ("class" =: "spacer") blank
 
--- RSVP multi-step WhatsApp overlay (fixed position, outside sections)
+-- RSVP multi-step WhatsApp overlay (fixed, outside sections)
 rsvpOverlay :: DomBuilder t m => m ()
 rsvpOverlay =
   elAttr "div"
@@ -192,20 +221,20 @@ rsvpOverlay =
           ) $ text "Enviar por WhatsApp \8594"
 
 -- ── MESA DE REGALOS ──────────────────────────────────────────────────────────
--- Prototype 4:
---   • multiple registry cards stacked, each with copy-to-clipboard
+-- images/4.png backdrop. Horizontal scroll track.
 
 mesaRegalosSection :: DomBuilder t m => m ()
 mesaRegalosSection =
   sec "mesa-regalos" $ do
-    elAttr "div" ("class" =: "registries") $ do
-      registryCard "LIVERPOOL" "51981423" "51981423"
-      registryCard "PR\211XIMAMENTE" "\8212" ""
-    elAttr "div" ("class" =: "spacer") blank
+    elAttr "div" ("class" =: "mesa-bg") blank
+    elAttr "p" ("class" =: "label label-center") $ text "MESA DE REGALOS"
+    elAttr "div" ("class" =: "h-track") $ do
+      hCard "LIVERPOOL" "51981423" "51981423"
+      hCard "PR\211XIMAMENTE" "\8212" ""
 
-registryCard :: DomBuilder t m => Text -> Text -> Text -> m ()
-registryCard name number copyVal =
-  elAttr "div" ("class" =: "glass rect registry-card") $ do
+hCard :: DomBuilder t m => Text -> Text -> Text -> m ()
+hCard name number copyVal =
+  elAttr "div" ("class" =: "h-card glass rect registry-card") $ do
     elAttr "p" ("class" =: "mesa-label") $ text name
     elAttr "p" ("class" =: "registry-number") $ text number
     if T.null copyVal
@@ -222,33 +251,38 @@ videoMsgSection =
   sec "video-mensaje" $ do
     elAttr "p" ("class" =: "label label-center") $
       text "VIDEO PARA LOS NOVIOS"
-    elAttr "div" ("class" =: "glass rect video-card") $ do
-      elAttr "span" ("class" =: "video-msg-icon") $ text "\127916"
-      elAttr "p" ("class" =: "video-msg-text") $
-        text "Gr\225banos un video corto deseando lo mejor a los novios \
-             \y env\237anoslo por WhatsApp."
-      elAttr "a"
-        ( "class"  =: "rsvp-btn video-wa-btn"
-       <> "href"   =: "https://wa.me/PLACEHOLDER?text=\
-                       \Video%20para%20Daniel%20y%20Ana%20Cristina%20\
-                       \%F0%9F%8E%AC"
-       <> "target" =: "_blank"
-       <> "rel"    =: "noopener noreferrer"
-        ) $ text "Enviar video \8594"
+    elAttr "div" ("class" =: "video-mask") $
+      elAttr "div" ("class" =: "glass rect video-card") $ do
+        elAttr "span" ("class" =: "video-msg-icon") $ text "\127916"
+        elAttr "p" ("class" =: "video-msg-text") $
+          text "Gr\225banos un video corto deseando lo mejor a los novios \
+               \y env\237anoslo por WhatsApp."
+        elAttr "a"
+          ( "class"        =: "rsvp-btn video-wa-btn"
+         <> "href"         =: "https://wa.me/PLACEHOLDER?text=\
+                             \Video%20para%20Daniel%20y%20Ana%20Cristina%20\
+                             \%F0%9F%8E%AC"
+         <> "target"       =: "_blank"
+         <> "rel"          =: "noopener noreferrer"
+         <> "data-magnetic" =: ""
+          ) $ text "Enviar video \8594"
     elAttr "div" ("class" =: "spacer") blank
 
 -- ── CLOSING ──────────────────────────────────────────────────────────────────
--- Prototype 5:
---   • warm portrait, very light overlay
---   • "¡Nos vemos el" / "10 de octubre!" in Great Vibes, large, bottom-left
+-- images/5.png (couple sunlit forest). Split-text reveal + countdown.
 
 closingSection :: DomBuilder t m => m ()
 closingSection =
   sec "closing" $ do
+    elAttr "div" ("class" =: "closing-bg") blank
     elAttr "div" ("class" =: "spacer") blank
     elAttr "div" ("class" =: "closing-text") $ do
       elAttr "span" ("class" =: "closing-line") $ text "\xa1Nos vemos el"
       elAttr "span" ("class" =: "closing-line") $ text "10 de octubre!"
+    elAttr "div" ("class" =: "countdown" <> "aria-live" =: "polite") $ do
+      el "span" $ text "Faltan "
+      elAttr "span" ("id" =: "countdown-days") $ text "\8212"
+      el "span" $ text " d\237as"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -260,15 +294,15 @@ sec sid =
     )
 
 navA :: DomBuilder t m => Text -> Text -> m ()
-navA href label = elAttr "a" ("href" =: href) $ text label
+navA href label =
+  elAttr "a" ("href" =: href <> "data-magnetic" =: "") $ text label
 
 -- ── All CSS ───────────────────────────────────────────────────────────────────
--- Google Fonts @import must come first in the stylesheet.
 
 siteCSS :: Text
 siteCSS = T.unlines
 
-  -- Fonts (loaded here so index.html stays a bare skeleton)
+  -- Fonts
   [ "@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&family=Courier+Prime:ital,wght@0,400;1,400&display=swap');"
   , ""
 
@@ -283,20 +317,22 @@ siteCSS = T.unlines
   , "}"
   , ""
 
+  -- ── Split-text helpers ────────────────────────────────────────────────────
+  , ".sw { display: inline-block; overflow: hidden; vertical-align: bottom; }"
+  , ".sw-i { display: inline-block; }"
+  , ""
+
   -- ── Section shell ─────────────────────────────────────────────────────────
   , ".section {"
   , "  position: relative;"
   , "  min-height: 100svh;"
   , "  display: flex;"
   , "  flex-direction: column;"
-  , "  background-size: auto 100%;"
-  , "  background-position: center;"
-  , "  background-repeat: no-repeat;"
   , "  overflow: hidden;"
   , "  isolation: isolate;"
   , "}"
   , ""
-  -- Warm scrim
+  -- Subtle warm scrim — sits above inner bg layers (z:-2), below content (z:0)
   , ".section::before {"
   , "  content: '';"
   , "  position: absolute;"
@@ -305,21 +341,95 @@ siteCSS = T.unlines
   , "  z-index: -1;"
   , "  pointer-events: none;"
   , "}"
-  , ""
   -- Dress-code: stronger amber overlay
-  , "#dress-code::before { background: rgba(52,28,4,.62); }"
+  , "#dress-code::before { background: rgba(52,28,4,.55); }"
+  -- RSVP and video: no extra scrim (their gradient bg is already dark enough)
+  , "#rsvp::before, #video-mensaje::before { background: transparent; }"
   , ""
-  -- Background images
-  , "#hero         { background-image: url('images/hero.png');         background-color: #3d2e22; }"
-  , "#ubicacion    { background-image: url('images/ubicacion.png');    background-color: #2e3a28; }"
-  , "#dress-code   { background-image: url('images/dress-code.png');   background-color: #4a3010; }"
-  , "#rsvp         { background-image: url('images/rsvp.png');         background-color: #2a3035; }"
-  , "#mesa-regalos { background-image: url('images/mesa-regalos.png'); background-color: #382e24; }"
-  , "#video-mensaje { background-color: #2c2418; }"
-  , "#closing      { background-image: url('images/closing.png');      background-color: #4a3220; }"
+
+  -- ── Inner background layers ───────────────────────────────────────────────
+  -- z:-2 puts them below the ::before scrim at z:-1.
+  -- overflow:hidden on .section clips any scale/transform overflow.
+  , ".hero-bg, .ubicacion-bg, .dress-bg, .mesa-bg, .closing-bg {"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  z-index: -2;"
+  , "  background-size: cover;"
+  , "  background-position: center;"
+  , "  background-repeat: no-repeat;"
+  , "  will-change: transform;"
+  , "}"
+  , ".hero-bg      { background-image: url('images/1.png'); }"
+  , ".ubicacion-bg { background-image: url('images/2.png'); background-position: center top; }"
+  , ".dress-bg     { background-image: url('images/3.png'); }"
+  , ".mesa-bg      { background-image: url('images/4.png'); background-position: center 40%; }"
+  , ".closing-bg   { background-image: url('images/5.png'); background-position: center top; }"
+  , ""
+  -- Section color fallbacks (shown before image loads or when no image)
+  , "#hero         { background-color: #3d2e22; }"
+  , "#ubicacion    { background-color: #2e3a28; }"
+  , "#dress-code   { background-color: #4a3010; }"
+  , "#rsvp         { background: radial-gradient(ellipse at 50% 30%, #3a2614 0%, #1c1410 70%); }"
+  , "#mesa-regalos { background-color: #382e24; }"
+  , "#video-mensaje { background: linear-gradient(180deg, #2c2418 0%, #1a120a 100%); }"
+  , "#closing      { background-color: #4a3220; }"
   , ""
   -- Flex spacer
   , ".spacer { flex: 1; }"
+  , ""
+
+  -- ── Intro overlay ─────────────────────────────────────────────────────────
+  , ".intro {"
+  , "  position: fixed;"
+  , "  inset: 0;"
+  , "  z-index: 1000;"
+  , "  background: #1c1410;"
+  , "  display: flex;"
+  , "  align-items: center;"
+  , "  justify-content: center;"
+  , "}"
+  , ".intro-inner {"
+  , "  text-align: center;"
+  , "  padding: 0 2rem;"
+  , "  max-width: 560px;"
+  , "  width: 100%;"
+  , "}"
+  , ".intro-kicker {"
+  , "  font-family: 'Courier Prime', monospace;"
+  , "  font-size: clamp(.68rem, 2.2vw, .95rem);"
+  , "  letter-spacing: .28em;"
+  , "  text-transform: uppercase;"
+  , "  color: rgba(255,255,255,.82);"
+  , "  line-height: 2;"
+  , "  overflow: visible;"  -- overflow on .sw handles the clip
+  , "}"
+  , ".intro-rule {"
+  , "  display: block;"
+  , "  height: 1px;"
+  , "  width: 0;"
+  , "  background: #d4b483;"
+  , "  margin: 1.2rem auto;"
+  , "}"
+  , ".intro-sign {"
+  , "  font-family: 'Great Vibes', cursive;"
+  , "  font-size: clamp(2.4rem, 9vw, 4.4rem);"
+  , "  color: #fff;"
+  , "  line-height: 1.15;"
+  , "  opacity: 0;"  -- GSAP reveals this
+  , "}"
+  , ""
+
+  -- ── Progress bar ──────────────────────────────────────────────────────────
+  , ".progress-bar {"
+  , "  position: fixed;"
+  , "  top: 0; left: 0;"
+  , "  width: 100%; height: 2px;"
+  , "  background: #d4b483;"
+  , "  transform-origin: left center;"
+  , "  transform: scaleX(0);"
+  , "  z-index: 500;"
+  , "  pointer-events: none;"
+  , "}"
   , ""
 
   -- ── Hero ──────────────────────────────────────────────────────────────────
@@ -331,13 +441,26 @@ siteCSS = T.unlines
   , "  font-size: clamp(4.4rem, 18vw, 8.4rem);"
   , "  line-height: .88;"
   , "  color: #fff;"
+  , "  overflow: visible;"
+  , "}"
+  , ".hero-date-wrap {"
+  , "  display: flex;"
+  , "  align-items: center;"
+  , "  justify-content: center;"
+  , "  gap: .9rem;"
+  , "  padding: 1rem 1.8rem .78rem;"
+  , "}"
+  , ".hero-date-rule {"
+  , "  height: 1px;"
+  , "  width: 0;"
+  , "  background: #d4b483;"
+  , "  flex-shrink: 0;"
   , "}"
   , ".hero-date {"
-  , "  text-align: center;"
   , "  letter-spacing: .28em;"
   , "  font-size: .68rem;"
   , "  color: rgba(255,255,255,.82);"
-  , "  padding: 1rem 0 .78rem;"
+  , "  white-space: nowrap;"
   , "}"
   , ".hero-nav {"
   , "  display: flex;"
@@ -354,8 +477,20 @@ siteCSS = T.unlines
   , "  letter-spacing: .22em;"
   , "  text-transform: uppercase;"
   , "  transition: color .2s;"
+  , "  display: inline-block;"  -- needed for magnetic transform
   , "}"
   , ".hero-nav a:hover { color: #fff; }"
+  , ".scroll-hint {"
+  , "  position: absolute;"
+  , "  bottom: 5.8rem;"
+  , "  left: 50%;"
+  , "  transform: translateX(-50%);"
+  , "  font-size: .82rem;"
+  , "  color: rgba(255,255,255,.45);"
+  , "  letter-spacing: .1em;"
+  , "  pointer-events: none;"
+  , "  user-select: none;"
+  , "}"
   , ""
 
   -- ── Section labels ────────────────────────────────────────────────────────
@@ -365,9 +500,32 @@ siteCSS = T.unlines
   , "  text-transform: uppercase;"
   , "  color: rgba(255,255,255,.87);"
   , "  padding: 1.8rem 1.8rem 0;"
+  , "  position: relative;"
+  , "  z-index: 1;"
   , "}"
   , ".label-right  { text-align: right; }"
   , ".label-center { text-align: center; }"
+  , ""
+
+  -- ── Marquee ───────────────────────────────────────────────────────────────
+  , ".marquee {"
+  , "  overflow: hidden;"
+  , "  white-space: nowrap;"
+  , "  padding: .55rem 0;"
+  , "  border-bottom: 1px solid rgba(255,255,255,.12);"
+  , "  position: relative;"
+  , "  z-index: 1;"
+  , "  background: rgba(18,12,5,.15);"
+  , "}"
+  , ".marquee-track {"
+  , "  display: inline-block;"
+  , "  white-space: nowrap;"
+  , "  font-size: .56rem;"
+  , "  letter-spacing: .2em;"
+  , "  color: rgba(255,255,255,.55);"
+  , "  text-transform: uppercase;"
+  , "}"
+  , ".marquee-track span { margin-right: .2em; }"
   , ""
 
   -- ── Glass cards ───────────────────────────────────────────────────────────
@@ -381,28 +539,40 @@ siteCSS = T.unlines
   , "  line-height: 2;"
   , "  font-size: .87rem;"
   , "  color: rgba(255,255,255,.9);"
+  , "  position: relative;"
+  , "  z-index: 1;"
   , "}"
-  , ""
   , ".blob {"
   , "  border-radius: 44% 56% 38% 62% / 52% 44% 56% 48%;"
   , "  width: calc(100% - 3.6rem);"
   , "  max-width: 420px;"
   , "}"
-  , ""
   , ".rect { border-radius: 14px; max-width: 320px; }"
   , ""
 
-  -- ── Dress-code collage ────────────────────────────────────────────────────
-  , ".collage {"
-  , "  display: block;"
-  , "  width: calc(100% - 3.6rem);"
-  , "  max-width: 420px;"
-  , "  margin: .6rem 1.8rem 0;"
-  , "  border-radius: 10px;"
-  , "  object-fit: contain;"
-  , "  max-height: 52vh;"
+  -- ── Dress code ────────────────────────────────────────────────────────────
+  , ".dress-info {"
+  , "  position: relative;"
+  , "  z-index: 2;"
+  , "  margin-top: 3rem;"
   , "}"
-  , ".collage[src='images/dress-collage.jpg'] { min-height: 0; }"
+  , ".dress-runway {"
+  , "  position: absolute;"
+  , "  bottom: 4%;"
+  , "  left: 0; right: 0;"
+  , "  display: flex;"
+  , "  justify-content: center;"
+  , "  align-items: flex-end;"
+  , "  gap: clamp(1rem, 6vw, 3rem);"
+  , "  pointer-events: none;"
+  , "  z-index: 2;"
+  , "}"
+  , ".dress-cutout {"
+  , "  height: clamp(160px, 36vh, 320px);"
+  , "  width: auto;"
+  , "  filter: drop-shadow(0 12px 28px rgba(0,0,0,.55));"
+  , "  will-change: transform, opacity;"
+  , "}"
   , ""
 
   -- ── RSVP button (shared by all action buttons) ────────────────────────────
@@ -529,18 +699,24 @@ siteCSS = T.unlines
   , ".rsvp-whatsapp-btn:hover { background: rgba(37,211,102,.30); }"
   , ""
 
-  -- ── Mesa de Regalos ───────────────────────────────────────────────────────
-  , ".registries {"
+  -- ── Mesa de Regalos — horizontal track ────────────────────────────────────
+  , ".h-track {"
   , "  display: flex;"
-  , "  flex-direction: column;"
-  , "  gap: .8rem;"
-  , "  margin: 1.1rem 1.8rem 0;"
+  , "  flex-direction: row;"
+  , "  gap: 2rem;"
+  , "  padding: 2rem 3rem;"
+  , "  width: max-content;"
+  , "  align-items: center;"
+  , "  position: relative;"
+  , "  z-index: 1;"
   , "}"
-  , ".registry-card {"
-  , "  max-width: 340px;"
-  , "  line-height: 1.7;"
+  , ".h-card {"
+  , "  min-width: 260px;"
+  , "  max-width: 320px;"
+  , "  flex-shrink: 0;"
   , "  margin: 0;"
   , "}"
+  , ".registry-card { line-height: 1.7; }"
   , ".mesa-label {"
   , "  font-size: .63rem;"
   , "  letter-spacing: .27em;"
@@ -559,10 +735,19 @@ siteCSS = T.unlines
   , "  font-size: .65rem;"
   , "  padding: .32rem .9rem;"
   , "}"
+  , "@media (max-width: 640px) {"
+  , "  .h-track {"
+  , "    flex-direction: column;"
+  , "    width: 100%;"
+  , "    padding: 1rem 1.8rem;"
+  , "  }"
+  , "  .h-card { min-width: auto; }"
+  , "}"
   , ""
 
   -- ── Video mensaje ─────────────────────────────────────────────────────────
-  , ".video-card { max-width: 320px; text-align: center; }"
+  , ".video-mask { overflow: hidden; }"
+  , ".video-card { max-width: 320px; text-align: center; margin-left: auto; margin-right: auto; }"
   , ".video-msg-icon {"
   , "  display: block;"
   , "  font-size: 2.4rem;"
@@ -576,6 +761,29 @@ siteCSS = T.unlines
   , "  margin-bottom: .8rem;"
   , "}"
   , ".video-wa-btn { margin-top: .8rem; }"
+  , ""
+
+  -- ── Countdown ─────────────────────────────────────────────────────────────
+  , ".countdown {"
+  , "  padding: 1.2rem 1.8rem 2.5rem;"
+  , "  font-size: .68rem;"
+  , "  letter-spacing: .2em;"
+  , "  color: rgba(255,255,255,.52);"
+  , "  text-transform: uppercase;"
+  , "}"
+  , ""
+
+  -- ── Closing ───────────────────────────────────────────────────────────────
+  , ".closing-text { padding: 0 1.8rem 1.8rem; }"
+  , ".closing-line {"
+  , "  display: block;"
+  , "  font-family: 'Great Vibes', cursive;"
+  , "  font-weight: 400;"
+  , "  font-size: clamp(3.6rem, 15vw, 7.5rem);"
+  , "  line-height: .9;"
+  , "  color: #fff;"
+  , "  overflow: visible;"
+  , "}"
   , ""
 
   -- ── Back to top ───────────────────────────────────────────────────────────
@@ -602,7 +810,6 @@ siteCSS = T.unlines
   , "  transform: translateY(-3px);"
   , "}"
   , ".back-to-top:active { transform: translateY(0); }"
-  -- Arrow: two thin lines forming a chevron ∧
   , ".back-to-top::before,"
   , ".back-to-top::after {"
   , "  content: '';"
@@ -623,14 +830,15 @@ siteCSS = T.unlines
   , "}"
   , ""
 
-  -- ── Closing ───────────────────────────────────────────────────────────────
-  , ".closing-text { padding: 0 1.8rem 4rem; }"
-  , ".closing-line {"
-  , "  display: block;"
-  , "  font-family: 'Great Vibes', cursive;"
-  , "  font-weight: 400;"
-  , "  font-size: clamp(3.6rem, 15vw, 7.5rem);"
-  , "  line-height: .9;"
-  , "  color: #fff;"
+  -- ── Magnetic elements ─────────────────────────────────────────────────────
+  , "[data-magnetic] { display: inline-block; }"
+  , ""
+
+  -- ── Reduced motion ────────────────────────────────────────────────────────
+  , "@media (prefers-reduced-motion: reduce) {"
+  , "  .intro { display: none !important; }"
+  , "  .progress-bar { display: none; }"
+  , "  .sw-i { transform: none !important; }"
+  , "  .intro-sign { opacity: 1; }"
   , "}"
   ]
