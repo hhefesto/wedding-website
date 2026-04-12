@@ -21,10 +21,11 @@
   // ── Init ──────────────────────────────────────────────────────────────────
 
   function initAll() {
-    gsap.registerPlugin(ScrollTrigger);
+    gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
     initHero();
     initScrollAnimations();
     initParallax();
+    initBackToTop();
     initRSVP();
     initMesaRegalos();
   }
@@ -128,6 +129,54 @@
           end: 'bottom top',
           scrub: true
         }
+      });
+    });
+  }
+
+  // ── Back to top ───────────────────────────────────────────────────────────
+
+  function initBackToTop() {
+    var btn = document.getElementById('back-to-top');
+    if (!btn) return;
+
+    var visible = false;
+
+    // Show after scrolling past hero height
+    ScrollTrigger.create({
+      trigger: '#ubicacion',
+      start: 'top 90%',
+      onEnter: function () {
+        if (visible) return;
+        visible = true;
+        btn.style.display = 'block';
+        gsap.fromTo(btn,
+          { opacity: 0, scale: 0.6, y: 14 },
+          { opacity: 1, scale: 1, y: 0, duration: 0.55, ease: 'back.out(1.8)' });
+      },
+      onLeaveBack: function () {
+        if (!visible) return;
+        visible = false;
+        gsap.to(btn, {
+          opacity: 0, scale: 0.6, y: 14, duration: 0.35, ease: 'power2.in',
+          onComplete: function () { btn.style.display = 'none'; }
+        });
+      }
+    });
+
+    // Click: GSAP smooth scroll to top with luxurious ease
+    btn.addEventListener('click', function () {
+      // Brief button animation before scrolling
+      gsap.to(btn, {
+        scale: 0.88, duration: 0.12, ease: 'power2.in',
+        onComplete: function () {
+          gsap.to(btn, { scale: 1, duration: 0.2, ease: 'back.out(2)' });
+        }
+      });
+      // Smooth scroll — override native scroll-behavior for GSAP control
+      gsap.to(window, {
+        scrollTo: { y: 0, autoKill: false },
+        duration: 1.4,
+        ease: 'power4.inOut'
       });
     });
   }

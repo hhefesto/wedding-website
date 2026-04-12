@@ -28,6 +28,20 @@ bodyW = do
   videoMsgSection
   closingSection
   rsvpOverlay
+  backToTop
+
+-- ── Back to top ──────────────────────────────────────────────────────────────
+-- Floating glass circle with upward arrow, shown after scrolling past hero.
+
+backToTop :: DomBuilder t m => m ()
+backToTop =
+  elAttr "button"
+    ( "id"         =: "back-to-top"
+   <> "class"      =: "back-to-top"
+   <> "aria-label" =: "Volver arriba"
+   <> "style"      =: "display:none"
+    ) blank
+  -- Arrow is drawn via CSS ::before (two borders + rotate)
 
 -- ── HERO ─────────────────────────────────────────────────────────────────────
 -- Prototype 1:
@@ -562,6 +576,51 @@ siteCSS = T.unlines
   , "  margin-bottom: .8rem;"
   , "}"
   , ".video-wa-btn { margin-top: .8rem; }"
+  , ""
+
+  -- ── Back to top ───────────────────────────────────────────────────────────
+  , ".back-to-top {"
+  , "  position: fixed;"
+  , "  bottom: 2rem;"
+  , "  right: 1.6rem;"
+  , "  z-index: 300;"
+  , "  width: 3rem;"
+  , "  height: 3rem;"
+  , "  border-radius: 50%;"
+  , "  background: rgba(138,108,76,.28);"
+  , "  backdrop-filter: blur(18px) saturate(1.3);"
+  , "  -webkit-backdrop-filter: blur(18px) saturate(1.3);"
+  , "  border: 1px solid rgba(255,255,255,.22);"
+  , "  cursor: pointer;"
+  , "  padding: 0;"
+  , "  transition: background .25s, border-color .25s, transform .25s;"
+  , "  box-shadow: 0 4px 24px rgba(0,0,0,.35);"
+  , "}"
+  , ".back-to-top:hover {"
+  , "  background: rgba(138,108,76,.52);"
+  , "  border-color: rgba(255,255,255,.5);"
+  , "  transform: translateY(-3px);"
+  , "}"
+  , ".back-to-top:active { transform: translateY(0); }"
+  -- Arrow: two thin lines forming a chevron ∧
+  , ".back-to-top::before,"
+  , ".back-to-top::after {"
+  , "  content: '';"
+  , "  position: absolute;"
+  , "  top: 50%;"
+  , "  width: .7rem;"
+  , "  height: 1.5px;"
+  , "  background: rgba(255,255,255,.88);"
+  , "  border-radius: 2px;"
+  , "}"
+  , ".back-to-top::before {"
+  , "  left: calc(50% - .62rem);"
+  , "  transform: translateY(-35%) rotate(-42deg);"
+  , "}"
+  , ".back-to-top::after {"
+  , "  left: calc(50% - .08rem);"
+  , "  transform: translateY(-35%) rotate(42deg);"
+  , "}"
   , ""
 
   -- ── Closing ───────────────────────────────────────────────────────────────
