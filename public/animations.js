@@ -151,7 +151,7 @@
         btn.style.display = 'block';
         gsap.fromTo(btn,
           { opacity: 0, scale: 0.6, y: 14 },
-          { opacity: 1, scale: 1, y: 0, duration: 0.55, ease: 'back.out(1.8)' });
+          { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: 'back.out(1.8)' });
       },
       onLeaveBack: function () {
         if (!visible) return;
@@ -175,7 +175,7 @@
       // Smooth scroll — override native scroll-behavior for GSAP control
       gsap.to(window, {
         scrollTo: { y: 0, autoKill: false },
-        duration: 1.4,
+        duration: 0.85,
         ease: 'power4.inOut'
       });
     });
