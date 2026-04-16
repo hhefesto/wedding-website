@@ -109,10 +109,11 @@
 
     splitWords('.intro-kicker', 'word');
 
+    gsap.set('.hero-bg', { scale: 1.06 });
     gsap.set('.intro-kicker .sw-i', { y: '110%' });
     gsap.set('.intro-rule', { width: 0 });
     gsap.set('.intro-sign', { opacity: 0, y: 22 });
-    gsap.set('#intro', { clipPath: 'inset(0% 0% 0% 0%)' });
+    gsap.set('#intro', { opacity: 1 });
 
     var tl = gsap.timeline({
       onComplete: function () {
@@ -144,10 +145,15 @@
         duration: 0.42,
         ease: 'power2.in'
       })
+      .to('.hero-bg', {
+        scale: 1,
+        duration: 1,
+        ease: 'power2.out'
+      }, '-=0.1')
       .to('#intro', {
-        clipPath: 'inset(50% 0% 50% 0%)',
-        duration: 0.9,
-        ease: 'power4.inOut'
+        opacity: 0,
+        duration: 0.82,
+        ease: 'power2.inOut'
       }, '-=0.05')
       .set('#intro', { display: 'none' });
 
@@ -157,9 +163,32 @@
   }
 
   function initStoryboard() {
+    initHeroEntrance();
     initCollageEntrance();
     initZoomSections();
     ScrollTrigger.refresh();
+  }
+
+  function initHeroEntrance() {
+    var hero = document.getElementById('hero');
+    if (!hero) {
+      return;
+    }
+
+    var tl = gsap.timeline();
+    tl.from('.hero-date', {
+      opacity: 0,
+      y: 16,
+      duration: 0.45,
+      ease: 'power2.out'
+    })
+      .from('.hero-nav a', {
+        opacity: 0,
+        y: 20,
+        duration: 0.56,
+        stagger: 0.07,
+        ease: 'power3.out'
+      }, '-=0.18');
   }
 
   function initCollageEntrance() {
@@ -173,7 +202,12 @@
       y: 22,
       duration: 0.72,
       stagger: 0.08,
-      ease: 'power2.out'
+      ease: 'power2.out',
+      scrollTrigger: {
+        trigger: '#collage',
+        start: 'top 74%',
+        once: true
+      }
     });
 
     gsap.from(cards, {
@@ -183,19 +217,22 @@
       duration: 0.75,
       stagger: 0.09,
       ease: 'power3.out',
-      delay: 0.12
+      delay: 0.1,
+      scrollTrigger: {
+        trigger: '#collage',
+        start: 'top 74%',
+        once: true
+      }
     });
   }
 
   function initCollageLinks() {
     var cards = Array.prototype.slice.call(document.querySelectorAll('.collage-card'));
-    if (!cards.length) {
-      return;
-    }
+    var heroLinks = Array.prototype.slice.call(document.querySelectorAll('.hero-nav a'));
 
-    cards.forEach(function (card) {
-      card.addEventListener('click', function (event) {
-        var href = card.getAttribute('href');
+    function bindSmooth(anchor) {
+      anchor.addEventListener('click', function (event) {
+        var href = anchor.getAttribute('href');
         if (!href || href.charAt(0) !== '#') {
           return;
         }
@@ -208,11 +245,18 @@
         event.preventDefault();
         gsap.to(window, {
           scrollTo: { y: target, autoKill: false },
-          duration: 0.9,
+          duration: 1,
           ease: 'power4.inOut'
         });
       });
-    });
+    }
+
+    cards.forEach(bindSmooth);
+    heroLinks.forEach(bindSmooth);
+
+    if (!cards.length) {
+      return;
+    }
 
     document.querySelectorAll('.zoom-section').forEach(function (section) {
       var id = section.id;

@@ -22,6 +22,7 @@ bodyW :: DomBuilder t m => m ()
 bodyW = do
   introOverlay
   progressBar
+  heroSection
   collageSection
   rsvpSection
   videoMsgSection
@@ -100,22 +101,15 @@ heroSection :: DomBuilder t m => m ()
 heroSection =
   sec "hero" $ do
     elAttr "div" ("class" =: "hero-bg") blank
-    elAttr "div" ("class" =: "spacer") blank
-    elAttr "div" ("class" =: "hero-names") $ do
-      elAttr "span" ("class" =: "hero-name") $ text "Daniel y"
-      elAttr "span" ("class" =: "hero-name") $ text "Ana Cristina"
-    elAttr "div" ("class" =: "hero-date-wrap") $ do
-      elAttr "div" ("class" =: "hero-date-rule") blank
-      elAttr "p"   ("class" =: "hero-date") $ text "10/10/26"
-      elAttr "div" ("class" =: "hero-date-rule") blank
+    elAttr "div" ("class" =: "hero-spacer") blank
+    elAttr "div" ("class" =: "hero-copy") $
+      elAttr "p" ("class" =: "hero-date") $ text "10/10/26"
     elAttr "nav" ("class" =: "hero-nav" <> "aria-label" =: "Secciones") $ do
       navA "#ubicacion"     "UBICACI\211N"
       navA "#dress-code"    "DRESS CODE"
       navA "#rsvp"          "RSVP"
       navA "#mesa-regalos"  "MESA DE REGALOS"
       navA "#video-mensaje" "VIDEO"
-    elAttr "div" ("class" =: "scroll-hint" <> "aria-hidden" =: "true") $
-      text "\8595"
 
 -- ── UBICACIÓN ────────────────────────────────────────────────────────────────
 -- images/2.png (couple in forest path). Marquee ticker at top.
@@ -422,14 +416,16 @@ siteCSS = T.unlines
   , "}"
   , ".collage-grid {"
   , "  display: grid;"
-  , "  grid-template-columns: repeat(2, minmax(0, 1fr));"
+  , "  grid-template-columns: repeat(2, minmax(0, 280px));"
+  , "  justify-content: center;"
   , "  gap: clamp(.75rem, 1.8vw, 1.2rem);"
   , "}"
   , ".collage-card {"
   , "  position: relative;"
   , "  border-radius: 14px;"
   , "  overflow: hidden;"
-  , "  min-height: clamp(170px, 30vw, 280px);"
+  , "  aspect-ratio: 3 / 4.7;"
+  , "  min-height: clamp(280px, 44vw, 500px);"
   , "  border: 1px solid rgba(255,255,255,.18);"
   , "  text-decoration: none;"
   , "  color: #fff;"
@@ -441,6 +437,7 @@ siteCSS = T.unlines
   , "  width: 100%;"
   , "  height: 100%;"
   , "  object-fit: cover;"
+  , "  object-position: center;"
   , "  transition: transform .55s cubic-bezier(.2,.75,.2,1);"
   , "}"
   , ".collage-card::after {"
@@ -580,63 +577,52 @@ siteCSS = T.unlines
   , ""
 
   -- ── Hero ──────────────────────────────────────────────────────────────────
-  , ".hero-names { padding: 0 1.8rem .12rem; }"
-  , ".hero-name {"
-  , "  display: block;"
-  , "  font-family: 'Great Vibes', cursive;"
-  , "  font-weight: 400;"
-  , "  font-size: clamp(4.4rem, 18vw, 8.4rem);"
-  , "  line-height: .88;"
-  , "  color: #fff;"
-  , "  overflow: visible;"
+  , "#hero::before {"
+  , "  background: linear-gradient(180deg, rgba(16,9,4,.08) 0%, rgba(16,9,4,.35) 72%, rgba(16,9,4,.6) 100%);"
   , "}"
-  , ".hero-date-wrap {"
-  , "  display: flex;"
-  , "  align-items: center;"
-  , "  justify-content: center;"
-  , "  gap: .9rem;"
-  , "  padding: 1rem 1.8rem .78rem;"
+  , ".hero-bg {"
+  , "  background-image: url('images/0.png');"
+  , "  background-size: auto 100%;"
+  , "  background-position: center top;"
   , "}"
-  , ".hero-date-rule {"
-  , "  height: 1px;"
-  , "  width: 0;"
-  , "  background: #d4b483;"
-  , "  flex-shrink: 0;"
+  , ".hero-spacer { flex: 1; }"
+  , ".hero-copy {"
+  , "  text-align: center;"
+  , "  padding: 0 1.2rem 1rem;"
+  , "  position: relative;"
+  , "  z-index: 1;"
   , "}"
   , ".hero-date {"
-  , "  letter-spacing: .28em;"
-  , "  font-size: .68rem;"
-  , "  color: rgba(255,255,255,.82);"
+  , "  letter-spacing: .2em;"
+  , "  font-size: clamp(.7rem, 2.1vw, 1rem);"
+  , "  color: rgba(255,255,255,.9);"
   , "  white-space: nowrap;"
+  , "  margin-bottom: .45rem;"
   , "}"
   , ".hero-nav {"
   , "  display: flex;"
-  , "  justify-content: space-around;"
+  , "  justify-content: center;"
   , "  flex-wrap: wrap;"
-  , "  gap: .3rem 0;"
-  , "  padding: .85rem .5rem;"
-  , "  border-top: 1px solid rgba(255,255,255,.17);"
+  , "  gap: .45rem 1rem;"
+  , "  padding: .95rem 1rem 1.2rem;"
+  , "  border-top: 1px solid rgba(255,255,255,.24);"
+  , "  background: linear-gradient(180deg, rgba(20,12,6,.12) 0%, rgba(20,12,6,.42) 100%);"
+  , "  backdrop-filter: blur(2px);"
+  , "  position: relative;"
+  , "  z-index: 2;"
   , "}"
   , ".hero-nav a {"
-  , "  color: rgba(255,255,255,.76);"
+  , "  color: rgba(255,255,255,.84);"
   , "  text-decoration: none;"
-  , "  font-size: .58rem;"
-  , "  letter-spacing: .22em;"
+  , "  font-size: .6rem;"
+  , "  letter-spacing: .2em;"
   , "  text-transform: uppercase;"
   , "  transition: color .2s;"
   , "  display: inline-block;"  -- needed for magnetic transform
   , "}"
   , ".hero-nav a:hover { color: #fff; }"
-  , ".scroll-hint {"
-  , "  position: absolute;"
-  , "  bottom: 5.8rem;"
-  , "  left: 50%;"
-  , "  transform: translateX(-50%);"
-  , "  font-size: .82rem;"
-  , "  color: rgba(255,255,255,.45);"
-  , "  letter-spacing: .1em;"
-  , "  pointer-events: none;"
-  , "  user-select: none;"
+  , "@media (max-width: 760px) {"
+  , "  .hero-bg { background-size: auto 100%; }"
   , "}"
   , ""
 
