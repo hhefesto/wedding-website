@@ -1,9 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts  #-}
 module Main where
 
 import Data.Text (Text)
 import qualified Data.Text as T
-import Control.Monad (forM_)
+import qualified Data.Text.Encoding as TE
+import qualified Data.ByteString as BS
+import Data.Word (Word8)
+import Control.Monad (forM_, void)
+import Language.Javascript.JSaddle (eval, MonadJSM, liftJSM)
 import Reflex.Dom
 
 -- ── Entry point ───────────────────────────────────────────────────────────────
@@ -18,18 +23,18 @@ headW = do
 
 -- ── Body ──────────────────────────────────────────────────────────────────────
 
-bodyW :: DomBuilder t m => m ()
+bodyW :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 bodyW = do
   introOverlay
   progressBar
   heroSection
   collageSection
-  rsvpSection
+  openRsvpE <- rsvpSection
   videoMsgSection
   ubicacionSection
   dressCodeSection
   mesaRegalosSection
-  rsvpOverlay
+  rsvpOverlay openRsvpE
   backToTop
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
@@ -40,10 +45,20 @@ introOverlay =
   elAttr "div" ("id" =: "intro" <> "class" =: "intro") $
     elAttr "div" ("class" =: "intro-inner") $ do
       elAttr "p" ("class" =: "intro-kicker") $
-        text "Te invitamos a nuestra boda"
+        staggerWords ["Te", "invitamos", "a", "nuestra", "boda"]
       elAttr "span" ("class" =: "intro-rule") blank
       elAttr "p" ("class" =: "intro-sign") $
         text "atte. Cristy y Daniel"
+
+-- Wrap each word in a span with a --i custom property for CSS stagger.
+staggerWords :: DomBuilder t m => [Text] -> m ()
+staggerWords ws =
+  forM_ (zip [(0 :: Int) ..] ws) $ \(i, w) -> do
+    elAttr "span"
+      ( "class" =: "intro-word"
+     <> "style" =: ("--i:" <> T.pack (show i))
+      ) $ text w
+    text "\xa0"
 
 -- ── Progress bar ──────────────────────────────────────────────────────────────
 
@@ -73,7 +88,6 @@ collageCard href label src =
   elAttr "a"
     ( "class" =: "collage-card"
    <> "href" =: href
-   <> "data-magnetic" =: ""
     ) $ do
     elAttr "img"
       ( "src" =: src
@@ -104,12 +118,21 @@ heroSection =
     elAttr "div" ("class" =: "hero-spacer") blank
     elAttr "div" ("class" =: "hero-copy") $
       elAttr "p" ("class" =: "hero-date") $ text "10/10/26"
-    elAttr "nav" ("class" =: "hero-nav" <> "aria-label" =: "Secciones") $ do
-      navA "#ubicacion"     "UBICACI\211N"
-      navA "#dress-code"    "DRESS CODE"
-      navA "#rsvp"          "RSVP"
-      navA "#mesa-regalos"  "MESA DE REGALOS"
-      navA "#video-mensaje" "VIDEO"
+    elAttr "nav" ("class" =: "hero-nav" <> "aria-label" =: "Secciones") $
+      forM_ (zip [(0 :: Int) ..] heroNavItems) $ \(i, (href, label)) ->
+        elAttr "a"
+          ( "href"  =: href
+         <> "style" =: ("--i:" <> T.pack (show i))
+          ) $ text label
+  where
+    heroNavItems :: [(Text, Text)]
+    heroNavItems =
+      [ ("#ubicacion",     "UBICACI\211N")
+      , ("#dress-code",    "DRESS CODE")
+      , ("#rsvp",          "RSVP")
+      , ("#mesa-regalos",  "MESA DE REGALOS")
+      , ("#video-mensaje", "VIDEO")
+      ]
 
 -- ── UBICACIÓN ────────────────────────────────────────────────────────────────
 -- images/2.png (couple in forest path). Marquee ticker at top.
@@ -163,98 +186,160 @@ dressCodeSection =
 
 -- ── RSVP ─────────────────────────────────────────────────────────────────────
 
-rsvpSection :: DomBuilder t m => m ()
+rsvpSection :: (DomBuilder t m, MonadHold t m, PostBuild t m) => m (Event t ())
 rsvpSection =
   secZoom "rsvp" "8% 16%" $ do
     elAttr "div" ("class" =: "section-photo rsvp-bg") blank
-    elAttr "div" ("class" =: "section-content") $ do
+    openE <- elAttr "div" ("class" =: "section-content") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "RSVP"
-      elAttr "div" ("class" =: "glass rect" <> "data-reveal" =: "") $ do
+      e <- elAttr "div" ("class" =: "glass rect" <> "data-reveal" =: "") $ do
         el "p" $ text "Por favor confirma tu asistencia"
         el "p" $ text "antes del 10 de septiembre de 2026."
-        elAttr "button"
-          ( "class"        =: "rsvp-btn"
-         <> "id"           =: "rsvp-open-btn"
-         <> "data-magnetic" =: ""
-          ) $ text "Confirmar \8594"
+        (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Confirmar \8594"
+        return (() <$ domEvent Click btnEl)
       elAttr "div" ("class" =: "spacer") blank
+      return e
+    return openE
 
--- RSVP multi-step WhatsApp overlay (fixed, outside sections)
-rsvpOverlay :: DomBuilder t m => m ()
-rsvpOverlay =
-  elAttr "div"
-    ( "id"    =: "rsvp-overlay"
-   <> "class" =: "rsvp-overlay"
-   <> "style" =: "display:none"
-    ) $ do
-    elAttr "button" ("id" =: "rsvp-close" <> "class" =: "rsvp-close") $
-      text "\215"
-    elAttr "div" ("class" =: "rsvp-modal") $ do
-      -- Step 1: Name
-      elAttr "div" ("class" =: "rsvp-step" <> "id" =: "rsvp-step-1") $ do
-        elAttr "p" ("class" =: "rsvp-step-label") $
-          text "\191C\243mo te llamas?"
-        elAttr "input"
-          ( "type"        =: "text"
-         <> "id"          =: "rsvp-name"
-         <> "class"       =: "rsvp-input"
-         <> "placeholder" =: "Tu nombre completo"
-          ) blank
-        elAttr "button"
-          ("class" =: "rsvp-btn rsvp-next" <> "data-next" =: "2") $
-          text "Continuar \8594"
-      -- Step 2: Guest count
-      elAttr "div"
-        ("class" =: "rsvp-step" <> "id" =: "rsvp-step-2"
-         <> "style" =: "display:none") $ do
-        elAttr "p" ("class" =: "rsvp-step-label") $
-          text "\191Cu\225ntos asistir\225n?"
-        elAttr "div" ("class" =: "rsvp-counter") $ do
-          elAttr "button"
-            ("class" =: "rsvp-counter-btn" <> "id" =: "rsvp-minus") $
-            text "\8722"
-          elAttr "span" ("id" =: "rsvp-count") $ text "1"
-          elAttr "button"
-            ("class" =: "rsvp-counter-btn" <> "id" =: "rsvp-plus") $
-            text "+"
-        elAttr "button"
-          ("class" =: "rsvp-btn rsvp-next" <> "data-next" =: "3") $
-          text "Continuar \8594"
-      -- Step 3: Dietary restrictions
-      elAttr "div"
-        ("class" =: "rsvp-step" <> "id" =: "rsvp-step-3"
-         <> "style" =: "display:none") $ do
-        elAttr "p" ("class" =: "rsvp-step-label") $
-          text "\191Alguna restricci\243n alimentaria?"
-        elAttr "input"
-          ( "type"        =: "text"
-         <> "id"          =: "rsvp-dietary"
-         <> "class"       =: "rsvp-input"
-         <> "placeholder" =: "Opcional"
-          ) blank
-        elAttr "button"
-          ("class" =: "rsvp-btn rsvp-next" <> "data-next" =: "4") $
-          text "Continuar \8594"
-      -- Step 4: Summary + WhatsApp send
-      elAttr "div"
-        ("class" =: "rsvp-step" <> "id" =: "rsvp-step-4"
-         <> "style" =: "display:none") $ do
-        elAttr "p" ("class" =: "rsvp-step-label") $
-          text "\161Todo listo!"
-        elAttr "div"
-          ("id" =: "rsvp-summary" <> "class" =: "rsvp-summary") blank
-        elAttr "a"
-          ( "id"     =: "rsvp-whatsapp-btn"
-         <> "class"  =: "rsvp-btn rsvp-whatsapp-btn"
-         <> "href"   =: "#"
-         <> "target" =: "_blank"
-         <> "rel"    =: "noopener noreferrer"
-          ) $ text "Enviar por WhatsApp \8594"
+-- ── RSVP overlay — pure Reflex state machine ─────────────────────────────────
+-- All 4 step divs stay in the DOM; stepDyn drives CSS show/hide so inputs
+-- retain their values while hidden. WhatsApp href is built in pure Haskell.
+
+rsvpOverlay :: MonadWidget t m => Event t () -> m ()
+rsvpOverlay openE = mdo
+  visibleDyn <- holdDyn False $ leftmost [True <$ openE, False <$ closeE]
+  stepDyn <- foldDyn ($) (1 :: Int) $ leftmost
+    [ const 1         <$ openE
+    , min 4 . (+1) <$ nextE
+    ]
+
+  let overlayAttrs = ffor visibleDyn $ \v ->
+        "id" =: "rsvp-overlay" <> "class" =: "rsvp-overlay"
+          <> if v then mempty else "style" =: "display:none"
+
+  (closeE, nextE) <- elDynAttr "div" overlayAttrs $ do
+    (closeBtnEl, _) <- elAttr' "button" ("class" =: "rsvp-close") $ text "\215"
+
+    (n1E, n2E, n3E, nameD, guestD, dietaryD) <-
+      elAttr "div" ("class" =: "rsvp-modal") $ do
+
+        -- Step 1: name
+        (nameD', n1E') <- rsvpStep stepDyn 1 $ do
+          elAttr "p" ("class" =: "rsvp-step-label") $ text "\191C\243mo te llamas?"
+          ti <- inputElement $ def
+            & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
+              (  "type"        =: "text"
+              <> "class"       =: "rsvp-input"
+              <> "placeholder" =: "Tu nombre completo"
+              )
+          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Continuar \8594"
+          return (_inputElement_value ti, domEvent Click nb)
+
+        -- Step 2: guest count (mdo for counter buttons)
+        (guestD', n2E') <- rsvpStep stepDyn 2 $ mdo
+          elAttr "p" ("class" =: "rsvp-step-label") $ text "\191Cu\225ntos asistir\225n?"
+          countDyn <- foldDyn ($) (1 :: Int) $ leftmost
+            [ (\n -> max 1  (n - 1)) <$ minusE
+            , (\n -> min 10 (n + 1)) <$ plusE
+            , const 1               <$ openE
+            ]
+          (minusE, plusE) <- elAttr "div" ("class" =: "rsvp-counter") $ do
+            (minEl, _) <- elAttr' "button" ("class" =: "rsvp-counter-btn") $ text "\8722"
+            el "span" $ dynText (T.pack . show <$> countDyn)
+            (plusEl, _) <- elAttr' "button" ("class" =: "rsvp-counter-btn") $ text "+"
+            return (domEvent Click minEl, domEvent Click plusEl)
+          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Continuar \8594"
+          return (countDyn, domEvent Click nb)
+
+        -- Step 3: dietary restrictions
+        (dietaryD', n3E') <- rsvpStep stepDyn 3 $ do
+          elAttr "p" ("class" =: "rsvp-step-label") $
+            text "\191Alguna restricci\243n alimentaria?"
+          ti <- inputElement $ def
+            & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
+              (  "type"        =: "text"
+              <> "class"       =: "rsvp-input"
+              <> "placeholder" =: "Opcional"
+              )
+          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Continuar \8594"
+          return (_inputElement_value ti, domEvent Click nb)
+
+        -- Step 4: summary + WhatsApp link (no next button)
+        rsvpStep_ stepDyn 4 $ do
+          elAttr "p" ("class" =: "rsvp-step-label") $ text "\161Todo listo!"
+          let summaryDyn = summaryRows <$> nameD' <*> guestD' <*> dietaryD'
+          elAttr "div" ("class" =: "rsvp-summary") $
+            dyn_ $ ffor summaryDyn $ \rows ->
+              forM_ rows $ \row -> el "p" $ text row
+          let hrefDyn = buildWaHref <$> nameD' <*> guestD' <*> dietaryD'
+          elDynAttr "a"
+            ( ffor hrefDyn $ \h ->
+                "class"  =: "rsvp-btn rsvp-whatsapp-btn"
+             <> "href"   =: h
+             <> "target" =: "_blank"
+             <> "rel"    =: "noopener noreferrer"
+            ) $ text "Enviar por WhatsApp \8594"
+
+        return (n1E', n2E', n3E', nameD', guestD', dietaryD')
+
+    return (domEvent Click closeBtnEl, leftmost [n1E, n2E, n3E])
+
+  return ()
+
+-- Show a step div only when stepDyn == n; returns whatever the body returns.
+rsvpStep :: (DomBuilder t m, PostBuild t m)
+         => Dynamic t Int -> Int -> m a -> m a
+rsvpStep stepDyn n body =
+  elDynAttr "div"
+    ( ffor stepDyn $ \s ->
+        "class" =: "rsvp-step"
+          <> if s == n then mempty else "style" =: "display:none"
+    )
+    body
+
+-- Version that discards the body's return value.
+rsvpStep_ :: (DomBuilder t m, PostBuild t m)
+          => Dynamic t Int -> Int -> m a -> m ()
+rsvpStep_ stepDyn n body = rsvpStep stepDyn n body >> return ()
+
+-- Build the summary paragraph list shown on step 4.
+summaryRows :: Text -> Int -> Text -> [Text]
+summaryRows name guests dietary =
+  [ "Nombre: "    <> if T.null name then "\8212" else name
+  , "Asistentes: " <> T.pack (show guests)
+  ] ++ [ "Restricciones: " <> dietary | not (T.null dietary) ]
+
+-- Build the wa.me href with percent-encoded message.
+buildWaHref :: Text -> Int -> Text -> Text
+buildWaHref name guests dietary =
+  "https://wa.me/PLACEHOLDER?text=" <> percentEncode msg
+  where
+    msg = T.intercalate "\n" $
+      [ "\xa1Hola! Confirmo mi asistencia a la boda de Daniel y Ana Cristina \127881"
+      , "Nombre: "     <> if T.null name then "\8212" else name
+      , "Asistentes: " <> T.pack (show guests)
+      ] ++ [ "Restricciones: " <> dietary | not (T.null dietary) ]
+
+-- RFC-3986 percent-encoding (UTF-8 bytes, unreserved chars pass through).
+percentEncode :: Text -> Text
+percentEncode = T.pack . concatMap encByte . BS.unpack . TE.encodeUtf8
+  where
+    encByte :: Word8 -> String
+    encByte b
+      | (b >= 65 && b <= 90)   -- A-Z
+        || (b >= 97 && b <= 122)  -- a-z
+        || (b >= 48 && b <= 57)   -- 0-9
+        || b == 45 || b == 95 || b == 46 || b == 126  -- - _ . ~
+        = [toEnum (fromIntegral b)]
+      | otherwise = '%' : [hexDig (b `div` 16), hexDig (b `mod` 16)]
+    hexDig d = if d < 10
+               then toEnum (fromIntegral d + 48)   -- '0'
+               else toEnum (fromIntegral d - 10 + 65)  -- 'A'
 
 -- ── MESA DE REGALOS ──────────────────────────────────────────────────────────
 -- images/4.png backdrop. Horizontal scroll track.
 
-mesaRegalosSection :: DomBuilder t m => m ()
+mesaRegalosSection :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 mesaRegalosSection =
   secZoom "mesa-regalos" "86% 76%" $ do
     elAttr "div" ("class" =: "section-photo mesa-bg") blank
@@ -262,21 +347,32 @@ mesaRegalosSection =
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
         text "MESA DE REGALOS"
       elAttr "div" ("class" =: "h-track" <> "data-reveal" =: "") $ do
-        hCard "LIVERPOOL" "51981423" "51981423"
-        hCard "PR\211XIMAMENTE" "\8212" ""
+        hCard "LIVERPOOL" "51981423" (Just "51981423")
+        hCard "PR\211XIMAMENTE" "\8212" Nothing
       elAttr "div" ("class" =: "spacer") blank
 
-hCard :: DomBuilder t m => Text -> Text -> Text -> m ()
-hCard name number copyVal =
+hCard :: (MonadWidget t m, MonadJSM (Performable m)) => Text -> Text -> Maybe Text -> m ()
+hCard name number mCopy =
   elAttr "div" ("class" =: "h-card glass rect registry-card") $ do
     elAttr "p" ("class" =: "mesa-label") $ text name
     elAttr "p" ("class" =: "registry-number") $ text number
-    if T.null copyVal
-      then blank
-      else elAttr "button"
-             ( "class"     =: "rsvp-btn copy-btn"
-            <> "data-copy" =: copyVal
-             ) $ text "Copiar"
+    case mCopy of
+      Nothing  -> blank
+      Just val -> copyButton val
+
+-- Button that writes val to the clipboard and temporarily shows "¡Copiado!".
+copyButton :: (MonadWidget t m, MonadJSM (Performable m)) => Text -> m ()
+copyButton val = mdo
+  resetE  <- delay 1.4 clickE
+  labelDyn <- holdDyn "Copiar" $ leftmost
+    [ "\xa1Copiado!" <$ clickE
+    , "Copiar"       <$ resetE
+    ]
+  (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn copy-btn") $
+    dynText labelDyn
+  let clickE = domEvent Click btnEl
+  performEvent_ $ ffor clickE $ \_ ->
+    liftJSM $ void $ eval ("navigator.clipboard.writeText('" <> T.unpack val <> "')")
 
 -- ── VIDEO PARA LOS NOVIOS ─────────────────────────────────────────────────────
 
@@ -298,9 +394,8 @@ videoMsgSection =
            <> "href"         =: "https://wa.me/PLACEHOLDER?text=\
                                 \Video%20para%20Daniel%20y%20Ana%20Cristina%20\
                                 \%F0%9F%8E%AC"
-           <> "target"       =: "_blank"
-           <> "rel"          =: "noopener noreferrer"
-           <> "data-magnetic" =: ""
+           <> "target" =: "_blank"
+           <> "rel"    =: "noopener noreferrer"
             ) $ text "Enviar video \8594"
       elAttr "div" ("class" =: "spacer") blank
 
@@ -322,24 +417,20 @@ closingSection =
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
-sec :: DomBuilder t m => Text -> m () -> m ()
+sec :: DomBuilder t m => Text -> m a -> m a
 sec sid =
   elAttr "section"
     ( "id"    =: sid
    <> "class" =: "section"
     )
 
-secZoom :: DomBuilder t m => Text -> Text -> m () -> m ()
+secZoom :: DomBuilder t m => Text -> Text -> m a -> m a
 secZoom sid zoomOrigin =
   elAttr "section"
     ( "id"               =: sid
    <> "class"            =: "section zoom-section"
    <> "data-zoom-origin" =: zoomOrigin
     )
-
-navA :: DomBuilder t m => Text -> Text -> m ()
-navA href label =
-  elAttr "a" ("href" =: href <> "data-magnetic" =: "") $ text label
 
 -- ── All CSS ───────────────────────────────────────────────────────────────────
 
@@ -359,11 +450,6 @@ siteCSS = T.unlines
   , "  color: #f0ebe0;"
   , "  overflow-x: hidden;"
   , "}"
-  , ""
-
-  -- ── Split-text helpers ────────────────────────────────────────────────────
-  , ".sw { display: inline-block; overflow: hidden; vertical-align: bottom; }"
-  , ".sw-i { display: inline-block; }"
   , ""
 
   -- ── Section shell ─────────────────────────────────────────────────────────
@@ -522,7 +608,12 @@ siteCSS = T.unlines
   , ".spacer { flex: 1; }"
   , ""
 
-  -- ── Intro overlay ─────────────────────────────────────────────────────────
+  -- ── Intro overlay (pure CSS timeline) ─────────────────────────────────────
+  -- Timeline roughly matches the original GSAP sequence:
+  --   words 0..N-1 reveal staggered by 0.07s (duration 0.74s)
+  --   rule expands 0→60vw at 0.46s (duration 0.56s)
+  --   sign fades up at 0.84s (duration 0.7s)
+  --   overlay fades + visibility:hidden at 2.63s (duration 0.82s)
   , ".intro {"
   , "  position: fixed;"
   , "  inset: 0;"
@@ -531,6 +622,11 @@ siteCSS = T.unlines
   , "  display: flex;"
   , "  align-items: center;"
   , "  justify-content: center;"
+  , "  animation: introFadeOut .82s ease-in-out 2.63s forwards;"
+  , "}"
+  , "@keyframes introFadeOut {"
+  , "  from { opacity: 1; visibility: visible; }"
+  , "  to   { opacity: 0; visibility: hidden; }"
   , "}"
   , ".intro-inner {"
   , "  text-align: center;"
@@ -545,7 +641,17 @@ siteCSS = T.unlines
   , "  text-transform: uppercase;"
   , "  color: rgba(255,255,255,.82);"
   , "  line-height: 2;"
-  , "  overflow: visible;"  -- overflow on .sw handles the clip
+  , "  overflow: hidden;"
+  , "}"
+  , ".intro-word {"
+  , "  display: inline-block;"
+  , "  opacity: 0;"
+  , "  transform: translateY(110%);"
+  , "  animation: introWordReveal .74s cubic-bezier(.215,.61,.355,1) forwards;"
+  , "  animation-delay: calc(var(--i) * .07s);"
+  , "}"
+  , "@keyframes introWordReveal {"
+  , "  to { opacity: 1; transform: translateY(0); }"
   , "}"
   , ".intro-rule {"
   , "  display: block;"
@@ -553,13 +659,22 @@ siteCSS = T.unlines
   , "  width: 0;"
   , "  background: #d4b483;"
   , "  margin: 1.2rem auto;"
+  , "  animation: introRuleExpand .56s cubic-bezier(.25,.46,.45,.94) .46s forwards;"
+  , "}"
+  , "@keyframes introRuleExpand {"
+  , "  to { width: 60vw; }"
   , "}"
   , ".intro-sign {"
   , "  font-family: 'Great Vibes', cursive;"
   , "  font-size: clamp(2.4rem, 9vw, 4.4rem);"
   , "  color: #fff;"
   , "  line-height: 1.15;"
-  , "  opacity: 0;"  -- GSAP reveals this
+  , "  opacity: 0;"
+  , "  transform: translateY(22px);"
+  , "  animation: introSignReveal .7s cubic-bezier(.215,.61,.355,1) .84s forwards;"
+  , "}"
+  , "@keyframes introSignReveal {"
+  , "  to { opacity: 1; transform: translateY(0); }"
   , "}"
   , ""
 
@@ -592,12 +707,15 @@ siteCSS = T.unlines
   , "  position: relative;"
   , "  z-index: 1;"
   , "}"
+  -- Hero date + nav links enter after intro fades (~3.45 s total, overlap at ~3.2 s)
   , ".hero-date {"
   , "  letter-spacing: .2em;"
   , "  font-size: clamp(.7rem, 2.1vw, 1rem);"
   , "  color: rgba(255,255,255,.9);"
   , "  white-space: nowrap;"
   , "  margin-bottom: .45rem;"
+  , "  opacity: 0;"
+  , "  animation: heroFadeUp .45s ease-out 3.2s forwards;"
   , "}"
   , ".hero-nav {"
   , "  display: flex;"
@@ -618,9 +736,16 @@ siteCSS = T.unlines
   , "  letter-spacing: .2em;"
   , "  text-transform: uppercase;"
   , "  transition: color .2s;"
-  , "  display: inline-block;"  -- needed for magnetic transform
+  , "  display: inline-block;"
+  , "  opacity: 0;"
+  , "  animation: heroFadeUp .56s cubic-bezier(.215,.61,.355,1) forwards;"
+  , "  animation-delay: calc(3.4s + var(--i) * .07s);"
   , "}"
   , ".hero-nav a:hover { color: #fff; }"
+  , "@keyframes heroFadeUp {"
+  , "  from { opacity: 0; transform: translateY(20px); }"
+  , "  to   { opacity: 1; transform: translateY(0); }"
+  , "}"
   , "@media (max-width: 760px) {"
   , "  .hero-bg { background-size: auto 100%; }"
   , "}"
@@ -659,6 +784,8 @@ siteCSS = T.unlines
   , "  text-transform: uppercase;"
   , "}"
   , ".marquee-track span { margin-right: .2em; }"
+  , ".marquee-track { animation: marqueeScroll 30s linear infinite; }"
+  , "@keyframes marqueeScroll { to { transform: translateX(-50%); } }"
   , ""
 
   -- ── Glass cards ───────────────────────────────────────────────────────────
@@ -967,16 +1094,13 @@ siteCSS = T.unlines
   , "}"
   , ""
 
-  -- ── Magnetic elements ─────────────────────────────────────────────────────
-  , "[data-magnetic] { display: inline-block; }"
-  , ""
-
   -- ── Reduced motion ────────────────────────────────────────────────────────
   , "@media (prefers-reduced-motion: reduce) {"
   , "  .intro { display: none !important; }"
   , "  .progress-bar { display: none; }"
-  , "  .sw-i { transform: none !important; }"
-  , "  .intro-sign { opacity: 1; }"
+  , "  .intro-word, .intro-rule, .intro-sign { animation: none; opacity: 1; transform: none; }"
+  , "  .hero-date, .hero-nav a { animation: none; opacity: 1; transform: none; }"
+  , "  .marquee-track { animation: none; }"
   , "  [data-reveal] { opacity: 1; transform: none; }"
   , "  .zoom-section .section-photo { clip-path: none; transform: none; }"
   , "}"
