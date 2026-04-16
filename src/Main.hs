@@ -22,13 +22,12 @@ bodyW :: DomBuilder t m => m ()
 bodyW = do
   introOverlay
   progressBar
-  heroSection
+  collageSection
+  rsvpSection
+  videoMsgSection
   ubicacionSection
   dressCodeSection
-  rsvpSection
   mesaRegalosSection
-  videoMsgSection
-  closingSection
   rsvpOverlay
   backToTop
 
@@ -50,6 +49,37 @@ introOverlay =
 progressBar :: DomBuilder t m => m ()
 progressBar =
   elAttr "div" ("id" =: "progress-bar" <> "class" =: "progress-bar") blank
+
+-- ── Collage hub ──────────────────────────────────────────────────────────────
+
+collageSection :: DomBuilder t m => m ()
+collageSection =
+  elAttr "section" ("id" =: "collage" <> "class" =: "section collage-section") $ do
+    elAttr "div" ("class" =: "collage-heading") $ do
+      elAttr "p" ("class" =: "collage-kicker") $ text "Te invitamos"
+      elAttr "h1" ("class" =: "collage-title") $ text "Ana Cristina y Daniel"
+      elAttr "p" ("class" =: "collage-subtitle") $
+        text "Cada imagen abre una parte de nuestra boda"
+    elAttr "div" ("class" =: "collage-grid") $ do
+      collageCard "#rsvp"         "RSVP"         "images/1.png"
+      collageCard "#video-mensaje" "VIDEO"       "images/5.png"
+      collageCard "#ubicacion"    "UBICACION"    "images/2.png"
+      collageCard "#dress-code"   "DRESS CODE"   "images/3.png"
+      collageCard "#mesa-regalos" "MESA REGALOS" "images/4.png"
+
+collageCard :: DomBuilder t m => Text -> Text -> Text -> m ()
+collageCard href label src =
+  elAttr "a"
+    ( "class" =: "collage-card"
+   <> "href" =: href
+   <> "data-magnetic" =: ""
+    ) $ do
+    elAttr "img"
+      ( "src" =: src
+     <> "alt" =: label
+     <> "loading" =: "lazy"
+      ) blank
+    elAttr "span" ("class" =: "collage-label") $ text label
 
 -- ── Back to top ──────────────────────────────────────────────────────────────
 
@@ -92,19 +122,22 @@ heroSection =
 
 ubicacionSection :: DomBuilder t m => m ()
 ubicacionSection =
-  sec "ubicacion" $ do
-    elAttr "div" ("class" =: "ubicacion-bg") blank
-    elAttr "div" ("class" =: "marquee" <> "aria-hidden" =: "true") $
-      elAttr "div" ("class" =: "marquee-track") $
-        forM_ [(1::Int)..8] $ \_ ->
-          el "span" $ text
-            "VISTA REAL \xb7 GRAN TERRAZA \xb7 6 PM \xb7 10.10.26 \xa0\xa0"
-    elAttr "p" ("class" =: "label label-right") $ text "UBICACI\211N"
-    elAttr "div" ("class" =: "glass blob") $ do
-      el "p" $ text "Gran Terraza"
-      el "p" $ text "Vista Real Country Club"
-      el "p" $ text "6 pm"
-    elAttr "div" ("class" =: "spacer") blank
+  secZoom "ubicacion" "65% 12%" $ do
+    elAttr "div" ("class" =: "section-photo ubicacion-bg") blank
+    elAttr "div" ("class" =: "section-content") $ do
+      elAttr "div"
+        ("class" =: "marquee" <> "aria-hidden" =: "true" <> "data-reveal" =: "") $
+        elAttr "div" ("class" =: "marquee-track") $
+          forM_ [(1::Int)..8] $ \_ ->
+            el "span" $ text
+              "VISTA REAL \xb7 GRAN TERRAZA \xb7 6 PM \xb7 10.10.26 \xa0\xa0"
+      elAttr "p" ("class" =: "label label-right" <> "data-reveal" =: "") $
+        text "UBICACI\211N"
+      elAttr "div" ("class" =: "glass blob" <> "data-reveal" =: "") $ do
+        el "p" $ text "Gran Terraza"
+        el "p" $ text "Vista Real Country Club"
+        el "p" $ text "6 pm"
+      elAttr "div" ("class" =: "spacer") blank
 
 -- ── DRESS CODE ───────────────────────────────────────────────────────────────
 -- images/3.png backdrop + suits (6.png) and gowns (7.png) cutout runway.
@@ -112,41 +145,45 @@ ubicacionSection =
 
 dressCodeSection :: DomBuilder t m => m ()
 dressCodeSection =
-  sec "dress-code" $ do
-    elAttr "div" ("class" =: "dress-bg") blank
-    elAttr "p" ("class" =: "label label-center") $ text "DRESS CODE"
-    elAttr "div" ("class" =: "glass rect dress-info") $ do
-      el "p" $ text "Formal"
-      el "p" $ text "H: traje y corbata"
-      el "p" $ text "M: corto, midi, largo"
-    elAttr "div" ("class" =: "dress-runway") $ do
-      elAttr "img"
-        ( "class" =: "dress-cutout dress-suits"
-       <> "src"   =: "images/6.png"
-       <> "alt"   =: ""
-        ) blank
-      elAttr "img"
-        ( "class" =: "dress-cutout dress-gowns"
-       <> "src"   =: "images/7.png"
-       <> "alt"   =: ""
-        ) blank
-    elAttr "div" ("class" =: "spacer") blank
+  secZoom "dress-code" "22% 68%" $ do
+    elAttr "div" ("class" =: "section-photo dress-bg") blank
+    elAttr "div" ("class" =: "section-content") $ do
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
+        text "DRESS CODE"
+      elAttr "div" ("class" =: "glass rect dress-info" <> "data-reveal" =: "") $ do
+        el "p" $ text "Formal"
+        el "p" $ text "H: traje y corbata"
+        el "p" $ text "M: corto, midi, largo"
+      elAttr "div" ("class" =: "dress-runway" <> "data-reveal" =: "") $ do
+        elAttr "img"
+          ( "class" =: "dress-cutout dress-suits"
+         <> "src"   =: "images/6.png"
+         <> "alt"   =: ""
+          ) blank
+        elAttr "img"
+          ( "class" =: "dress-cutout dress-gowns"
+         <> "src"   =: "images/7.png"
+         <> "alt"   =: ""
+          ) blank
+      elAttr "div" ("class" =: "spacer") blank
 
 -- ── RSVP ─────────────────────────────────────────────────────────────────────
 
 rsvpSection :: DomBuilder t m => m ()
 rsvpSection =
-  sec "rsvp" $ do
-    elAttr "p" ("class" =: "label label-center") $ text "RSVP"
-    elAttr "div" ("class" =: "glass rect") $ do
-      el "p" $ text "Por favor confirma tu asistencia"
-      el "p" $ text "antes del 10 de septiembre de 2026."
-      elAttr "button"
-        ( "class"        =: "rsvp-btn"
-       <> "id"           =: "rsvp-open-btn"
-       <> "data-magnetic" =: ""
-        ) $ text "Confirmar \8594"
-    elAttr "div" ("class" =: "spacer") blank
+  secZoom "rsvp" "8% 16%" $ do
+    elAttr "div" ("class" =: "section-photo rsvp-bg") blank
+    elAttr "div" ("class" =: "section-content") $ do
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "RSVP"
+      elAttr "div" ("class" =: "glass rect" <> "data-reveal" =: "") $ do
+        el "p" $ text "Por favor confirma tu asistencia"
+        el "p" $ text "antes del 10 de septiembre de 2026."
+        elAttr "button"
+          ( "class"        =: "rsvp-btn"
+         <> "id"           =: "rsvp-open-btn"
+         <> "data-magnetic" =: ""
+          ) $ text "Confirmar \8594"
+      elAttr "div" ("class" =: "spacer") blank
 
 -- RSVP multi-step WhatsApp overlay (fixed, outside sections)
 rsvpOverlay :: DomBuilder t m => m ()
@@ -225,12 +262,15 @@ rsvpOverlay =
 
 mesaRegalosSection :: DomBuilder t m => m ()
 mesaRegalosSection =
-  sec "mesa-regalos" $ do
-    elAttr "div" ("class" =: "mesa-bg") blank
-    elAttr "p" ("class" =: "label label-center") $ text "MESA DE REGALOS"
-    elAttr "div" ("class" =: "h-track") $ do
-      hCard "LIVERPOOL" "51981423" "51981423"
-      hCard "PR\211XIMAMENTE" "\8212" ""
+  secZoom "mesa-regalos" "86% 76%" $ do
+    elAttr "div" ("class" =: "section-photo mesa-bg") blank
+    elAttr "div" ("class" =: "section-content") $ do
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
+        text "MESA DE REGALOS"
+      elAttr "div" ("class" =: "h-track" <> "data-reveal" =: "") $ do
+        hCard "LIVERPOOL" "51981423" "51981423"
+        hCard "PR\211XIMAMENTE" "\8212" ""
+      elAttr "div" ("class" =: "spacer") blank
 
 hCard :: DomBuilder t m => Text -> Text -> Text -> m ()
 hCard name number copyVal =
@@ -248,25 +288,27 @@ hCard name number copyVal =
 
 videoMsgSection :: DomBuilder t m => m ()
 videoMsgSection =
-  sec "video-mensaje" $ do
-    elAttr "p" ("class" =: "label label-center") $
-      text "VIDEO PARA LOS NOVIOS"
-    elAttr "div" ("class" =: "video-mask") $
-      elAttr "div" ("class" =: "glass rect video-card") $ do
-        elAttr "span" ("class" =: "video-msg-icon") $ text "\127916"
-        elAttr "p" ("class" =: "video-msg-text") $
-          text "Gr\225banos un video corto deseando lo mejor a los novios \
-               \y env\237anoslo por WhatsApp."
-        elAttr "a"
-          ( "class"        =: "rsvp-btn video-wa-btn"
-         <> "href"         =: "https://wa.me/PLACEHOLDER?text=\
-                             \Video%20para%20Daniel%20y%20Ana%20Cristina%20\
-                             \%F0%9F%8E%AC"
-         <> "target"       =: "_blank"
-         <> "rel"          =: "noopener noreferrer"
-         <> "data-magnetic" =: ""
-          ) $ text "Enviar video \8594"
-    elAttr "div" ("class" =: "spacer") blank
+  secZoom "video-mensaje" "80% 22%" $ do
+    elAttr "div" ("class" =: "section-photo video-bg") blank
+    elAttr "div" ("class" =: "section-content") $ do
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
+        text "VIDEO PARA LOS NOVIOS"
+      elAttr "div" ("class" =: "video-mask" <> "data-reveal" =: "") $
+        elAttr "div" ("class" =: "glass rect video-card") $ do
+          elAttr "span" ("class" =: "video-msg-icon") $ text "\127916"
+          elAttr "p" ("class" =: "video-msg-text") $
+            text "Gr\225banos un video corto deseando lo mejor a los novios \
+                 \y env\237anoslo por WhatsApp."
+          elAttr "a"
+            ( "class"        =: "rsvp-btn video-wa-btn"
+           <> "href"         =: "https://wa.me/PLACEHOLDER?text=\
+                                \Video%20para%20Daniel%20y%20Ana%20Cristina%20\
+                                \%F0%9F%8E%AC"
+           <> "target"       =: "_blank"
+           <> "rel"          =: "noopener noreferrer"
+           <> "data-magnetic" =: ""
+            ) $ text "Enviar video \8594"
+      elAttr "div" ("class" =: "spacer") blank
 
 -- ── CLOSING ──────────────────────────────────────────────────────────────────
 -- images/5.png (couple sunlit forest). Split-text reveal + countdown.
@@ -291,6 +333,14 @@ sec sid =
   elAttr "section"
     ( "id"    =: sid
    <> "class" =: "section"
+    )
+
+secZoom :: DomBuilder t m => Text -> Text -> m () -> m ()
+secZoom sid zoomOrigin =
+  elAttr "section"
+    ( "id"               =: sid
+   <> "class"            =: "section zoom-section"
+   <> "data-zoom-origin" =: zoomOrigin
     )
 
 navA :: DomBuilder t m => Text -> Text -> m ()
@@ -331,6 +381,91 @@ siteCSS = T.unlines
   , "  overflow: hidden;"
   , "  isolation: isolate;"
   , "}"
+  , ".zoom-section {"
+  , "  min-height: 100svh;"
+  , "  position: relative;"
+  , "}"
+  , ".section-content {"
+  , "  min-height: 100svh;"
+  , "  display: flex;"
+  , "  flex-direction: column;"
+  , "  position: relative;"
+  , "  z-index: 1;"
+  , "}"
+  , ""
+  , "#collage {"
+  , "  background: radial-gradient(circle at 18% 20%, #4a3727 0%, #1d140d 68%);"
+  , "  padding: clamp(1.5rem, 4vw, 2.8rem) clamp(1rem, 3vw, 2.6rem);"
+  , "}"
+  , ".collage-heading {"
+  , "  text-align: center;"
+  , "  margin-bottom: 1.4rem;"
+  , "}"
+  , ".collage-kicker {"
+  , "  letter-spacing: .22em;"
+  , "  text-transform: uppercase;"
+  , "  font-size: .62rem;"
+  , "  color: rgba(255,255,255,.72);"
+  , "}"
+  , ".collage-title {"
+  , "  margin-top: .4rem;"
+  , "  font-family: 'Great Vibes', cursive;"
+  , "  font-weight: 400;"
+  , "  line-height: .92;"
+  , "  font-size: clamp(3rem, 11vw, 6.2rem);"
+  , "}"
+  , ".collage-subtitle {"
+  , "  margin-top: .6rem;"
+  , "  color: rgba(255,255,255,.75);"
+  , "  font-size: .74rem;"
+  , "  letter-spacing: .06em;"
+  , "}"
+  , ".collage-grid {"
+  , "  display: grid;"
+  , "  grid-template-columns: repeat(2, minmax(0, 1fr));"
+  , "  gap: clamp(.75rem, 1.8vw, 1.2rem);"
+  , "}"
+  , ".collage-card {"
+  , "  position: relative;"
+  , "  border-radius: 14px;"
+  , "  overflow: hidden;"
+  , "  min-height: clamp(170px, 30vw, 280px);"
+  , "  border: 1px solid rgba(255,255,255,.18);"
+  , "  text-decoration: none;"
+  , "  color: #fff;"
+  , "  box-shadow: 0 14px 34px rgba(0,0,0,.35);"
+  , "}"
+  , ".collage-card img {"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  width: 100%;"
+  , "  height: 100%;"
+  , "  object-fit: cover;"
+  , "  transition: transform .55s cubic-bezier(.2,.75,.2,1);"
+  , "}"
+  , ".collage-card::after {"
+  , "  content: '';"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  background: linear-gradient(180deg, rgba(0,0,0,.05) 10%, rgba(0,0,0,.55) 100%);"
+  , "}"
+  , ".collage-card:hover img { transform: scale(1.06); }"
+  , ".collage-label {"
+  , "  position: absolute;"
+  , "  left: .9rem;"
+  , "  bottom: .8rem;"
+  , "  z-index: 1;"
+  , "  letter-spacing: .16em;"
+  , "  text-transform: uppercase;"
+  , "  font-size: .61rem;"
+  , "}"
+  , ".collage-card.is-active {"
+  , "  border-color: rgba(255,255,255,.88);"
+  , "  box-shadow: 0 0 0 1px rgba(255,255,255,.46), 0 14px 34px rgba(0,0,0,.35);"
+  , "}"
+  , "@media (max-width: 700px) {"
+  , "  .collage-grid { grid-template-columns: 1fr; }"
+  , "}"
   , ""
   -- Subtle warm scrim — sits above inner bg layers (z:-2), below content (z:0)
   , ".section::before {"
@@ -341,16 +476,17 @@ siteCSS = T.unlines
   , "  z-index: -1;"
   , "  pointer-events: none;"
   , "}"
+  , "#collage::before { background: transparent; }"
+  , ".zoom-section::before { background: rgba(16,10,6,.30); }"
   -- Dress-code: stronger amber overlay
   , "#dress-code::before { background: rgba(52,28,4,.55); }"
-  -- RSVP and video: no extra scrim (their gradient bg is already dark enough)
-  , "#rsvp::before, #video-mensaje::before { background: transparent; }"
+  , "#rsvp::before, #video-mensaje::before { background: rgba(16,10,6,.38); }"
   , ""
 
   -- ── Inner background layers ───────────────────────────────────────────────
   -- z:-2 puts them below the ::before scrim at z:-1.
   -- overflow:hidden on .section clips any scale/transform overflow.
-  , ".hero-bg, .ubicacion-bg, .dress-bg, .mesa-bg, .closing-bg {"
+  , ".section-photo, .hero-bg, .ubicacion-bg, .dress-bg, .rsvp-bg, .mesa-bg, .video-bg, .closing-bg {"
   , "  position: absolute;"
   , "  inset: 0;"
   , "  z-index: -2;"
@@ -362,10 +498,21 @@ siteCSS = T.unlines
   , ".hero-bg      { background-image: url('images/1.png'); }"
   , ".ubicacion-bg { background-image: url('images/2.png'); background-position: center top; }"
   , ".dress-bg     { background-image: url('images/3.png'); }"
+  , ".rsvp-bg      { background-image: url('images/1.png'); background-position: center 34%; }"
   , ".mesa-bg      { background-image: url('images/4.png'); background-position: center 40%; }"
+  , ".video-bg     { background-image: url('images/5.png'); background-position: center 24%; }"
   , ".closing-bg   { background-image: url('images/5.png'); background-position: center top; }"
+  , ".zoom-section .section-photo {"
+  , "  transform: scale(1.18);"
+  , "  clip-path: inset(18% 10% 18% 10% round 22px);"
+  , "}"
+  , "[data-reveal] {"
+  , "  opacity: 0;"
+  , "  transform: translateY(26px);"
+  , "}"
   , ""
   -- Section color fallbacks (shown before image loads or when no image)
+  , "#collage      { background-color: #24170f; }"
   , "#hero         { background-color: #3d2e22; }"
   , "#ubicacion    { background-color: #2e3a28; }"
   , "#dress-code   { background-color: #4a3010; }"
@@ -703,9 +850,13 @@ siteCSS = T.unlines
   , ".h-track {"
   , "  display: flex;"
   , "  flex-direction: row;"
+  , "  flex-wrap: wrap;"
   , "  gap: 2rem;"
   , "  padding: 2rem 3rem;"
-  , "  width: max-content;"
+  , "  width: 100%;"
+  , "  max-width: 940px;"
+  , "  margin: 0 auto;"
+  , "  justify-content: center;"
   , "  align-items: center;"
   , "  position: relative;"
   , "  z-index: 1;"
@@ -840,5 +991,7 @@ siteCSS = T.unlines
   , "  .progress-bar { display: none; }"
   , "  .sw-i { transform: none !important; }"
   , "  .intro-sign { opacity: 1; }"
+  , "  [data-reveal] { opacity: 1; transform: none; }"
+  , "  .zoom-section .section-photo { clip-path: none; transform: none; }"
   , "}"
   ]
