@@ -36,6 +36,8 @@ bodyW = do
   fixedNav
   rsvpOverlay openRsvpE
   backToTop
+  pb <- getPostBuild
+  performEvent_ $ liftJSM (void $ eval navHighlightingJS) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -70,11 +72,11 @@ progressBar =
 
 backToTop :: DomBuilder t m => m ()
 backToTop =
-  elAttr "button"
+  elAttr "a"
     ( "id"         =: "back-to-top"
    <> "class"      =: "back-to-top"
+   <> "href"       =: "#hero"
    <> "aria-label" =: "Volver arriba"
-   <> "style"      =: "display:none"
     ) blank
 
 -- ── HERO ─────────────────────────────────────────────────────────────────────
@@ -88,7 +90,21 @@ heroSection =
       elAttr "p" ("class" =: "hero-date") $ text "10/10/26"
 
 -- ── Fixed bottom navigation ───────────────────────────────────────────────────
--- Persistent glassmorphism bar. Starts hidden, GSAP animates it in after intro.
+-- Persistent glassmorphism bar. Slides in after intro via CSS animation.
+-- Active link highlighting is driven by IntersectionObserver (navHighlightingJS).
+
+navHighlightingJS :: String
+navHighlightingJS =
+  "(function(){"
+  <> "var obs=new IntersectionObserver(function(entries){"
+  <> "entries.forEach(function(e){"
+  <> "var id=e.target.id;"
+  <> "var lnk=document.querySelector('[data-section=\"'+id+'\"]');"
+  <> "if(lnk){lnk.classList.toggle('is-active',e.isIntersecting);}"
+  <> "});"
+  <> "},{rootMargin:'-40% 0px -40% 0px',threshold:0});"
+  <> "document.querySelectorAll('.image-section').forEach(function(s){obs.observe(s);});"
+  <> "})()"
 
 fixedNav :: DomBuilder t m => m ()
 fixedNav =
@@ -353,7 +369,7 @@ copyButton val = mdo
     dynText labelDyn
   let clickE = domEvent Click btnEl
   performEvent_ $ ffor clickE $ \_ ->
-    liftJSM $ void $ eval ("navigator.clipboard.writeText('" <> T.unpack val <> "')")
+    liftJSM $ void $ eval ("navigator.clipboard.writeText('" <> T.unpack val <> "'")
 
 -- ── VIDEO PARA LOS NOVIOS ─────────────────────────────────────────────────────
 
@@ -449,6 +465,13 @@ siteCSS = T.unlines
   , "  justify-content: center;"
   , "  overflow: hidden;"
   , "  background: #1c1410;"
+  , "  animation: sectionDim linear both;"
+  , "  animation-timeline: view();"
+  , "  animation-range: exit 20% exit 90%;"
+  , "}"
+  , "@keyframes sectionDim {"
+  , "  from { opacity: 1; }"
+  , "  to   { opacity: .22; }"
   , "}"
   , ".image-section::before { display: none; }"
   , ".section-img {"
@@ -461,6 +484,13 @@ siteCSS = T.unlines
   , "  will-change: transform;"
   , "  user-select: none;"
   , "  pointer-events: none;"
+  , "  animation: imgDrift linear both;"
+  , "  animation-timeline: view();"
+  , "  animation-range: entry 0% exit 100%;"
+  , "}"
+  , "@keyframes imgDrift {"
+  , "  from { transform: translateY(0); }"
+  , "  to   { transform: translateY(-10%); }"
   , "}"
   , ".section-overlay {"
   , "  position: absolute;"
@@ -553,16 +583,21 @@ siteCSS = T.unlines
   , "}"
   , ""
 
-  -- ── Progress bar ──────────────────────────────────────────────────────────
+  -- ── Progress bar — CSS scroll-driven ─────────────────────────────────────
   , ".progress-bar {"
   , "  position: fixed;"
   , "  top: 0; left: 0;"
   , "  width: 100%; height: 2px;"
   , "  background: #d4b483;"
   , "  transform-origin: left center;"
-  , "  transform: scaleX(0);"
   , "  z-index: 500;"
   , "  pointer-events: none;"
+  , "  animation: progressGrow linear both;"
+  , "  animation-timeline: scroll();"
+  , "}"
+  , "@keyframes progressGrow {"
+  , "  from { transform: scaleX(0); }"
+  , "  to   { transform: scaleX(1); }"
   , "}"
   , ""
 
@@ -621,8 +656,11 @@ siteCSS = T.unlines
   , "  backdrop-filter: blur(24px) saturate(1.2);"
   , "  -webkit-backdrop-filter: blur(24px) saturate(1.2);"
   , "  border-top: 1px solid rgba(255,255,255,.09);"
-  , "  opacity: 0;"
-  , "  transform: translateY(100%);"
+  , "  animation: navSlideUp .6s ease-out 3.6s both;"
+  , "}"
+  , "@keyframes navSlideUp {"
+  , "  from { opacity: 0; transform: translateY(100%); }"
+  , "  to   { opacity: 1; transform: translateY(0); }"
   , "}"
   , ".fixed-nav-link {"
   , "  color: rgba(255,255,255,.65);"
@@ -931,10 +969,20 @@ siteCSS = T.unlines
   , ".video-wa-btn { margin-top: .8rem; }"
   , ""
 
-  -- ── [data-reveal] initial state ────────────────────────────────────────────
-  , "[data-reveal] {"
-  , "  opacity: 0;"
-  , "  transform: translateY(26px);"
+  -- ── [data-reveal] — scroll-driven reveal (visible by default for Safari) ──
+  , "[data-reveal] { opacity: 1; transform: none; }"
+  , "@supports (animation-timeline: view()) {"
+  , "  [data-reveal] {"
+  , "    opacity: 0;"
+  , "    transform: translateY(26px);"
+  , "    animation: revealIn .7s ease-out both;"
+  , "    animation-timeline: view();"
+  , "    animation-range: entry 10% entry 45%;"
+  , "  }"
+  , "  @keyframes revealIn {"
+  , "    from { opacity: 0; transform: translateY(26px); }"
+  , "    to   { opacity: 1; transform: translateY(0); }"
+  , "  }"
   , "}"
   , ""
 
@@ -948,11 +996,11 @@ siteCSS = T.unlines
   , "  height: 3rem;"
   , "  border-radius: 50%;"
   , "  background: rgba(138,108,76,.28);"
-  , "  backdrop-filter: blur(18px) saturate(1.3);"
-  , "  -webkit-backdrop-filter: blur(18px) saturate(1.3);"
   , "  border: 1px solid rgba(255,255,255,.22);"
   , "  cursor: pointer;"
   , "  padding: 0;"
+  , "  display: block;"
+  , "  text-decoration: none;"
   , "  transition: background .25s, border-color .25s, transform .25s;"
   , "  box-shadow: 0 4px 24px rgba(0,0,0,.35);"
   , "}"
@@ -989,7 +1037,7 @@ siteCSS = T.unlines
   , "  .intro-word, .intro-rule, .intro-sign { animation: none; opacity: 1; transform: none; }"
   , "  .hero-date { animation: none; opacity: 1; transform: none; }"
   , "  .marquee-track { animation: none; }"
-  , "  [data-reveal] { opacity: 1; transform: none; }"
+  , "  [data-reveal] { animation: none !important; opacity: 1; transform: none; }"
   , "  .fixed-nav { opacity: 1; transform: none; }"
   , "}"
   ]

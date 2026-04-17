@@ -73,7 +73,7 @@
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
             ${ghcjsBuild}/bin/wedding-frontend.jsexe/ "$out/"
 
-          # Static assets (animations.js, etc.) — rsync --no-perms keeps $out writable
+          # Static public assets — rsync --no-perms keeps $out writable
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw ${publicAssets}/ "$out/"
 
           # Text-free photos + dress-code cutouts
@@ -127,8 +127,6 @@
             test -f ${self'.packages.website}/images/$img \
               || (echo "MISSING images/$img"; exit 1)
           done
-          test -f ${self'.packages.website}/animations.js \
-            || (echo "MISSING animations.js"; exit 1)
           mkdir -p "$out"
         '';
       };
