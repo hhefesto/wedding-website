@@ -28,17 +28,17 @@ bodyW = do
   introOverlay
   progressBar
   heroSection
-  collageSection
   openRsvpE <- rsvpSection
   videoMsgSection
   ubicacionSection
   dressCodeSection
   mesaRegalosSection
+  fixedNav
   rsvpOverlay openRsvpE
   backToTop
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
--- Full-screen panel that plays the invitation text then clip-path reveals hero.
+-- Full-screen panel that plays the invitation text then fades out.
 
 introOverlay :: DomBuilder t m => m ()
 introOverlay =
@@ -66,36 +66,6 @@ progressBar :: DomBuilder t m => m ()
 progressBar =
   elAttr "div" ("id" =: "progress-bar" <> "class" =: "progress-bar") blank
 
--- ── Collage hub ──────────────────────────────────────────────────────────────
-
-collageSection :: DomBuilder t m => m ()
-collageSection =
-  elAttr "section" ("id" =: "collage" <> "class" =: "section collage-section") $ do
-    elAttr "div" ("class" =: "collage-heading") $ do
-      elAttr "p" ("class" =: "collage-kicker") $ text "Te invitamos"
-      elAttr "h1" ("class" =: "collage-title") $ text "Ana Cristina y Daniel"
-      elAttr "p" ("class" =: "collage-subtitle") $
-        text "Cada imagen abre una parte de nuestra boda"
-    elAttr "div" ("class" =: "collage-grid") $ do
-      collageCard "#rsvp"         "RSVP"         "images/1.png"
-      collageCard "#video-mensaje" "VIDEO"       "images/5.png"
-      collageCard "#ubicacion"    "UBICACION"    "images/2.png"
-      collageCard "#dress-code"   "DRESS CODE"   "images/3.png"
-      collageCard "#mesa-regalos" "MESA REGALOS" "images/4.png"
-
-collageCard :: DomBuilder t m => Text -> Text -> Text -> m ()
-collageCard href label src =
-  elAttr "a"
-    ( "class" =: "collage-card"
-   <> "href" =: href
-    ) $ do
-    elAttr "img"
-      ( "src" =: src
-     <> "alt" =: label
-     <> "loading" =: "lazy"
-      ) blank
-    elAttr "span" ("class" =: "collage-label") $ text label
-
 -- ── Back to top ──────────────────────────────────────────────────────────────
 
 backToTop :: DomBuilder t m => m ()
@@ -108,8 +78,6 @@ backToTop =
     ) blank
 
 -- ── HERO ─────────────────────────────────────────────────────────────────────
--- Clean text-free photo (images/1.png) as inner .hero-bg layer.
--- Live typography is the sole source of names/date.
 
 heroSection :: DomBuilder t m => m ()
 heroSection =
@@ -118,86 +86,97 @@ heroSection =
     elAttr "div" ("class" =: "hero-spacer") blank
     elAttr "div" ("class" =: "hero-copy") $
       elAttr "p" ("class" =: "hero-date") $ text "10/10/26"
-    elAttr "nav" ("class" =: "hero-nav" <> "aria-label" =: "Secciones") $
-      forM_ (zip [(0 :: Int) ..] heroNavItems) $ \(i, (href, label)) ->
-        elAttr "a"
-          ( "href"  =: href
-         <> "style" =: ("--i:" <> T.pack (show i))
-          ) $ text label
+
+-- ── Fixed bottom navigation ───────────────────────────────────────────────────
+-- Persistent glassmorphism bar. Starts hidden, GSAP animates it in after intro.
+
+fixedNav :: DomBuilder t m => m ()
+fixedNav =
+  elAttr "nav"
+    ( "id"         =: "fixed-nav"
+   <> "class"      =: "fixed-nav"
+   <> "aria-label" =: "Secciones"
+    ) $
+    forM_ navItems $ \(href, label) ->
+      elAttr "a"
+        ( "href"         =: href
+       <> "class"        =: "fixed-nav-link"
+       <> "data-section" =: T.drop 1 href
+        ) $ text label
   where
-    heroNavItems :: [(Text, Text)]
-    heroNavItems =
-      [ ("#ubicacion",     "UBICACI\211N")
-      , ("#dress-code",    "DRESS CODE")
-      , ("#rsvp",          "RSVP")
-      , ("#mesa-regalos",  "MESA DE REGALOS")
+    navItems :: [(Text, Text)]
+    navItems =
+      [ ("#rsvp",          "RSVP")
       , ("#video-mensaje", "VIDEO")
+      , ("#ubicacion",     "UBICACI\211N")
+      , ("#dress-code",    "DRESS CODE")
+      , ("#mesa-regalos",  "REGALOS")
       ]
 
 -- ── UBICACIÓN ────────────────────────────────────────────────────────────────
--- images/2.png (couple in forest path). Marquee ticker at top.
 
 ubicacionSection :: DomBuilder t m => m ()
 ubicacionSection =
-  secZoom "ubicacion" "65% 12%" $ do
-    elAttr "div" ("class" =: "section-photo ubicacion-bg") blank
-    elAttr "div" ("class" =: "section-content") $ do
-      elAttr "div"
-        ("class" =: "marquee" <> "aria-hidden" =: "true" <> "data-reveal" =: "") $
-        elAttr "div" ("class" =: "marquee-track") $
-          forM_ [(1::Int)..8] $ \_ ->
-            el "span" $ text
-              "VISTA REAL \xb7 GRAN TERRAZA \xb7 6 PM \xb7 10.10.26 \xa0\xa0"
-      elAttr "p" ("class" =: "label label-right" <> "data-reveal" =: "") $
+  secImage "ubicacion" $ do
+    elAttr "img"
+      ( "class"   =: "section-img"
+     <> "src"     =: "images/2.png"
+     <> "alt"     =: ""
+     <> "loading" =: "lazy"
+      ) blank
+    elAttr "div" ("class" =: "section-overlay") $ do
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
         text "UBICACI\211N"
-      elAttr "div" ("class" =: "glass blob" <> "data-reveal" =: "") $ do
+      elAttr "div" ("class" =: "glass rect ubicacion-card" <> "data-reveal" =: "") $ do
         el "p" $ text "Gran Terraza"
         el "p" $ text "Vista Real Country Club"
         el "p" $ text "6 pm"
-      elAttr "div" ("class" =: "spacer") blank
+        elAttr "iframe"
+          ( "class"          =: "map-embed"
+         <> "src"            =: "https://maps.google.com/maps?q=20.5229282,-100.4039031&z=17&output=embed&hl=es"
+         <> "allowfullscreen" =: ""
+         <> "loading"        =: "lazy"
+         <> "referrerpolicy" =: "no-referrer-when-downgrade"
+          ) blank
 
 -- ── DRESS CODE ───────────────────────────────────────────────────────────────
--- images/3.png backdrop + suits (6.png) and gowns (7.png) cutout runway.
--- Pinned clip-path zoom animation reveals everything on scroll.
 
 dressCodeSection :: DomBuilder t m => m ()
 dressCodeSection =
-  secZoom "dress-code" "22% 68%" $ do
-    elAttr "div" ("class" =: "section-photo dress-bg") blank
-    elAttr "div" ("class" =: "section-content") $ do
+  secImage "dress-code" $ do
+    elAttr "img"
+      ( "class"   =: "section-img"
+     <> "src"     =: "images/3.png"
+     <> "alt"     =: ""
+     <> "loading" =: "lazy"
+      ) blank
+    -- label + glass card anchored to the top of the section
+    elAttr "div" ("class" =: "section-overlay dress-code-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
         text "DRESS CODE"
       elAttr "div" ("class" =: "glass rect dress-info" <> "data-reveal" =: "") $ do
         el "p" $ text "Formal"
         el "p" $ text "H: traje y corbata"
         el "p" $ text "M: corto, midi, largo"
-      elAttr "div" ("class" =: "dress-runway" <> "data-reveal" =: "") $ do
-        elAttr "img"
-          ( "class" =: "dress-cutout dress-suits"
-         <> "src"   =: "images/6.png"
-         <> "alt"   =: ""
-          ) blank
-        elAttr "img"
-          ( "class" =: "dress-cutout dress-gowns"
-         <> "src"   =: "images/7.png"
-         <> "alt"   =: ""
-          ) blank
-      elAttr "div" ("class" =: "spacer") blank
 
 -- ── RSVP ─────────────────────────────────────────────────────────────────────
 
 rsvpSection :: (DomBuilder t m, MonadHold t m, PostBuild t m) => m (Event t ())
 rsvpSection =
-  secZoom "rsvp" "8% 16%" $ do
-    elAttr "div" ("class" =: "section-photo rsvp-bg") blank
-    openE <- elAttr "div" ("class" =: "section-content") $ do
+  secImage "rsvp" $ do
+    elAttr "img"
+      ( "class"   =: "section-img"
+     <> "src"     =: "images/1.png"
+     <> "alt"     =: ""
+     <> "loading" =: "lazy"
+      ) blank
+    openE <- elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "RSVP"
-      e <- elAttr "div" ("class" =: "glass rect" <> "data-reveal" =: "") $ do
+      e <- elAttr "div" ("class" =: "glass rect rsvp-confirm" <> "data-reveal" =: "") $ do
         el "p" $ text "Por favor confirma tu asistencia"
         el "p" $ text "antes del 10 de septiembre de 2026."
         (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Confirmar \8594"
         return (() <$ domEvent Click btnEl)
-      elAttr "div" ("class" =: "spacer") blank
       return e
     return openE
 
@@ -337,19 +316,21 @@ percentEncode = T.pack . concatMap encByte . BS.unpack . TE.encodeUtf8
                else toEnum (fromIntegral d - 10 + 65)  -- 'A'
 
 -- ── MESA DE REGALOS ──────────────────────────────────────────────────────────
--- images/4.png backdrop. Horizontal scroll track.
 
 mesaRegalosSection :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 mesaRegalosSection =
-  secZoom "mesa-regalos" "86% 76%" $ do
-    elAttr "div" ("class" =: "section-photo mesa-bg") blank
-    elAttr "div" ("class" =: "section-content") $ do
+  secImage "mesa-regalos" $ do
+    elAttr "img"
+      ( "class"   =: "section-img"
+     <> "src"     =: "images/4.png"
+     <> "alt"     =: ""
+     <> "loading" =: "lazy"
+      ) blank
+    elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
         text "MESA DE REGALOS"
-      elAttr "div" ("class" =: "h-track" <> "data-reveal" =: "") $ do
+      elAttr "div" ("class" =: "h-track" <> "data-reveal" =: "") $
         hCard "LIVERPOOL" "51981423" (Just "51981423")
-        hCard "PR\211XIMAMENTE" "\8212" Nothing
-      elAttr "div" ("class" =: "spacer") blank
 
 hCard :: (MonadWidget t m, MonadJSM (Performable m)) => Text -> Text -> Maybe Text -> m ()
 hCard name number mCopy =
@@ -378,9 +359,14 @@ copyButton val = mdo
 
 videoMsgSection :: DomBuilder t m => m ()
 videoMsgSection =
-  secZoom "video-mensaje" "80% 22%" $ do
-    elAttr "div" ("class" =: "section-photo video-bg") blank
-    elAttr "div" ("class" =: "section-content") $ do
+  secImage "video-mensaje" $ do
+    elAttr "img"
+      ( "class"   =: "section-img"
+     <> "src"     =: "images/5.png"
+     <> "alt"     =: ""
+     <> "loading" =: "lazy"
+      ) blank
+    elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
         text "VIDEO PARA LOS NOVIOS"
       elAttr "div" ("class" =: "video-mask" <> "data-reveal" =: "") $
@@ -397,23 +383,6 @@ videoMsgSection =
            <> "target" =: "_blank"
            <> "rel"    =: "noopener noreferrer"
             ) $ text "Enviar video \8594"
-      elAttr "div" ("class" =: "spacer") blank
-
--- ── CLOSING ──────────────────────────────────────────────────────────────────
--- images/5.png (couple sunlit forest). Split-text reveal + countdown.
-
-closingSection :: DomBuilder t m => m ()
-closingSection =
-  sec "closing" $ do
-    elAttr "div" ("class" =: "closing-bg") blank
-    elAttr "div" ("class" =: "spacer") blank
-    elAttr "div" ("class" =: "closing-text") $ do
-      elAttr "span" ("class" =: "closing-line") $ text "\xa1Nos vemos el"
-      elAttr "span" ("class" =: "closing-line") $ text "10 de octubre!"
-    elAttr "div" ("class" =: "countdown" <> "aria-live" =: "polite") $ do
-      el "span" $ text "Faltan "
-      elAttr "span" ("id" =: "countdown-days") $ text "\8212"
-      el "span" $ text " d\237as"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -424,12 +393,11 @@ sec sid =
    <> "class" =: "section"
     )
 
-secZoom :: DomBuilder t m => Text -> Text -> m a -> m a
-secZoom sid zoomOrigin =
+secImage :: DomBuilder t m => Text -> m a -> m a
+secImage sid =
   elAttr "section"
-    ( "id"               =: sid
-   <> "class"            =: "section zoom-section"
-   <> "data-zoom-origin" =: zoomOrigin
+    ( "id"    =: sid
+   <> "class" =: "section image-section"
     )
 
 -- ── All CSS ───────────────────────────────────────────────────────────────────
@@ -461,96 +429,6 @@ siteCSS = T.unlines
   , "  overflow: hidden;"
   , "  isolation: isolate;"
   , "}"
-  , ".zoom-section {"
-  , "  min-height: 100svh;"
-  , "  position: relative;"
-  , "}"
-  , ".section-content {"
-  , "  min-height: 100svh;"
-  , "  display: flex;"
-  , "  flex-direction: column;"
-  , "  position: relative;"
-  , "  z-index: 1;"
-  , "}"
-  , ""
-  , "#collage {"
-  , "  background: radial-gradient(circle at 18% 20%, #4a3727 0%, #1d140d 68%);"
-  , "  padding: clamp(1.5rem, 4vw, 2.8rem) clamp(1rem, 3vw, 2.6rem);"
-  , "}"
-  , ".collage-heading {"
-  , "  text-align: center;"
-  , "  margin-bottom: 1.4rem;"
-  , "}"
-  , ".collage-kicker {"
-  , "  letter-spacing: .22em;"
-  , "  text-transform: uppercase;"
-  , "  font-size: .62rem;"
-  , "  color: rgba(255,255,255,.72);"
-  , "}"
-  , ".collage-title {"
-  , "  margin-top: .4rem;"
-  , "  font-family: 'Great Vibes', cursive;"
-  , "  font-weight: 400;"
-  , "  line-height: .92;"
-  , "  font-size: clamp(3rem, 11vw, 6.2rem);"
-  , "}"
-  , ".collage-subtitle {"
-  , "  margin-top: .6rem;"
-  , "  color: rgba(255,255,255,.75);"
-  , "  font-size: .74rem;"
-  , "  letter-spacing: .06em;"
-  , "}"
-  , ".collage-grid {"
-  , "  display: grid;"
-  , "  grid-template-columns: repeat(2, minmax(0, 280px));"
-  , "  justify-content: center;"
-  , "  gap: clamp(.75rem, 1.8vw, 1.2rem);"
-  , "}"
-  , ".collage-card {"
-  , "  position: relative;"
-  , "  border-radius: 14px;"
-  , "  overflow: hidden;"
-  , "  aspect-ratio: 3 / 4.7;"
-  , "  min-height: clamp(280px, 44vw, 500px);"
-  , "  border: 1px solid rgba(255,255,255,.18);"
-  , "  text-decoration: none;"
-  , "  color: #fff;"
-  , "  box-shadow: 0 14px 34px rgba(0,0,0,.35);"
-  , "}"
-  , ".collage-card img {"
-  , "  position: absolute;"
-  , "  inset: 0;"
-  , "  width: 100%;"
-  , "  height: 100%;"
-  , "  object-fit: cover;"
-  , "  object-position: center;"
-  , "  transition: transform .55s cubic-bezier(.2,.75,.2,1);"
-  , "}"
-  , ".collage-card::after {"
-  , "  content: '';"
-  , "  position: absolute;"
-  , "  inset: 0;"
-  , "  background: linear-gradient(180deg, rgba(0,0,0,.05) 10%, rgba(0,0,0,.55) 100%);"
-  , "}"
-  , ".collage-card:hover img { transform: scale(1.06); }"
-  , ".collage-label {"
-  , "  position: absolute;"
-  , "  left: .9rem;"
-  , "  bottom: .8rem;"
-  , "  z-index: 1;"
-  , "  letter-spacing: .16em;"
-  , "  text-transform: uppercase;"
-  , "  font-size: .61rem;"
-  , "}"
-  , ".collage-card.is-active {"
-  , "  border-color: rgba(255,255,255,.88);"
-  , "  box-shadow: 0 0 0 1px rgba(255,255,255,.46), 0 14px 34px rgba(0,0,0,.35);"
-  , "}"
-  , "@media (max-width: 700px) {"
-  , "  .collage-grid { grid-template-columns: 1fr; }"
-  , "}"
-  , ""
-  -- Subtle warm scrim — sits above inner bg layers (z:-2), below content (z:0)
   , ".section::before {"
   , "  content: '';"
   , "  position: absolute;"
@@ -559,61 +437,57 @@ siteCSS = T.unlines
   , "  z-index: -1;"
   , "  pointer-events: none;"
   , "}"
-  , "#collage::before { background: transparent; }"
-  , ".zoom-section::before { background: rgba(16,10,6,.30); }"
-  -- Dress-code: stronger amber overlay
-  , "#dress-code::before { background: rgba(52,28,4,.55); }"
-  , "#rsvp::before, #video-mensaje::before { background: rgba(16,10,6,.38); }"
   , ""
 
-  -- ── Inner background layers ───────────────────────────────────────────────
-  -- z:-2 puts them below the ::before scrim at z:-1.
-  -- overflow:hidden on .section clips any scale/transform overflow.
-  , ".section-photo, .hero-bg, .ubicacion-bg, .dress-bg, .rsvp-bg, .mesa-bg, .video-bg, .closing-bg {"
-  , "  position: absolute;"
-  , "  inset: 0;"
-  , "  z-index: -2;"
-  , "  background-size: cover;"
-  , "  background-position: center;"
-  , "  background-repeat: no-repeat;"
+  -- ── Image sections ────────────────────────────────────────────────────────
+  , ".image-section {"
+  , "  position: relative;"
+  , "  height: 100svh;"
+  , "  min-height: unset;"
+  , "  display: flex;"
+  , "  align-items: center;"
+  , "  justify-content: center;"
+  , "  overflow: hidden;"
+  , "  background: #1c1410;"
+  , "}"
+  , ".image-section::before { display: none; }"
+  , ".section-img {"
+  , "  height: 100svh;"
+  , "  width: auto;"
+  , "  max-width: none;"
+  , "  object-fit: contain;"
+  , "  display: block;"
+  , "  flex-shrink: 0;"
   , "  will-change: transform;"
+  , "  user-select: none;"
+  , "  pointer-events: none;"
   , "}"
-  , ".hero-bg      { background-image: url('images/1.png'); }"
-  , ".ubicacion-bg { background-image: url('images/2.png'); background-position: center top; }"
-  , ".dress-bg     { background-image: url('images/3.png'); }"
-  , ".rsvp-bg      { background-image: url('images/1.png'); background-position: center 34%; }"
-  , ".mesa-bg      { background-image: url('images/4.png'); background-position: center 40%; }"
-  , ".video-bg     { background-image: url('images/5.png'); background-position: center 24%; }"
-  , ".closing-bg   { background-image: url('images/5.png'); background-position: center top; }"
-  , ".zoom-section .section-photo {"
-  , "  transform: scale(1.18);"
-  , "  clip-path: inset(18% 10% 18% 10% round 22px);"
-  , "}"
-  , "[data-reveal] {"
-  , "  opacity: 0;"
-  , "  transform: translateY(26px);"
+  , ".section-overlay {"
+  , "  position: absolute;"
+  , "  bottom: 0;"
+  , "  left: 0;"
+  , "  right: 0;"
+  , "  z-index: 2;"
+  , "  padding: 1.5rem 1.8rem 4.5rem;"
+  , "  background: linear-gradient(to top, rgba(28,20,16,.78) 0%, rgba(28,20,16,.30) 65%, transparent 100%);"
+  , "  display: flex;"
+  , "  flex-direction: column;"
+  , "  align-items: center;"
   , "}"
   , ""
-  -- Section color fallbacks (shown before image loads or when no image)
-  , "#collage      { background-color: #24170f; }"
+
+  -- Section background fallbacks
   , "#hero         { background-color: #3d2e22; }"
-  , "#ubicacion    { background-color: #2e3a28; }"
+  , "#ubicacion    { background-color: #3a2c18; }"
   , "#dress-code   { background-color: #4a3010; }"
   , "#rsvp         { background: radial-gradient(ellipse at 50% 30%, #3a2614 0%, #1c1410 70%); }"
   , "#mesa-regalos { background-color: #382e24; }"
   , "#video-mensaje { background: linear-gradient(180deg, #2c2418 0%, #1a120a 100%); }"
-  , "#closing      { background-color: #4a3220; }"
   , ""
-  -- Flex spacer
   , ".spacer { flex: 1; }"
   , ""
 
   -- ── Intro overlay (pure CSS timeline) ─────────────────────────────────────
-  -- Timeline roughly matches the original GSAP sequence:
-  --   words 0..N-1 reveal staggered by 0.07s (duration 0.74s)
-  --   rule expands 0→60vw at 0.46s (duration 0.56s)
-  --   sign fades up at 0.84s (duration 0.7s)
-  --   overlay fades + visibility:hidden at 2.63s (duration 0.82s)
   , ".intro {"
   , "  position: fixed;"
   , "  inset: 0;"
@@ -657,6 +531,7 @@ siteCSS = T.unlines
   , "  display: block;"
   , "  height: 1px;"
   , "  width: 0;"
+  , "  max-width: 100%;"
   , "  background: #d4b483;"
   , "  margin: 1.2rem auto;"
   , "  animation: introRuleExpand .56s cubic-bezier(.25,.46,.45,.94) .46s forwards;"
@@ -696,18 +571,22 @@ siteCSS = T.unlines
   , "  background: linear-gradient(180deg, rgba(16,9,4,.08) 0%, rgba(16,9,4,.35) 72%, rgba(16,9,4,.6) 100%);"
   , "}"
   , ".hero-bg {"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  z-index: -2;"
   , "  background-image: url('images/0.png');"
   , "  background-size: auto 100%;"
   , "  background-position: center top;"
+  , "  background-repeat: no-repeat;"
+  , "  will-change: transform;"
   , "}"
   , ".hero-spacer { flex: 1; }"
   , ".hero-copy {"
   , "  text-align: center;"
-  , "  padding: 0 1.2rem 1rem;"
+  , "  padding: 0 1.2rem 5rem;"
   , "  position: relative;"
   , "  z-index: 1;"
   , "}"
-  -- Hero date + nav links enter after intro fades (~3.45 s total, overlap at ~3.2 s)
   , ".hero-date {"
   , "  letter-spacing: .2em;"
   , "  font-size: clamp(.7rem, 2.1vw, 1rem);"
@@ -717,37 +596,49 @@ siteCSS = T.unlines
   , "  opacity: 0;"
   , "  animation: heroFadeUp .45s ease-out 3.2s forwards;"
   , "}"
-  , ".hero-nav {"
-  , "  display: flex;"
-  , "  justify-content: center;"
-  , "  flex-wrap: wrap;"
-  , "  gap: .45rem 1rem;"
-  , "  padding: .95rem 1rem 1.2rem;"
-  , "  border-top: 1px solid rgba(255,255,255,.24);"
-  , "  background: linear-gradient(180deg, rgba(20,12,6,.12) 0%, rgba(20,12,6,.42) 100%);"
-  , "  backdrop-filter: blur(2px);"
-  , "  position: relative;"
-  , "  z-index: 2;"
-  , "}"
-  , ".hero-nav a {"
-  , "  color: rgba(255,255,255,.84);"
-  , "  text-decoration: none;"
-  , "  font-size: .6rem;"
-  , "  letter-spacing: .2em;"
-  , "  text-transform: uppercase;"
-  , "  transition: color .2s;"
-  , "  display: inline-block;"
-  , "  opacity: 0;"
-  , "  animation: heroFadeUp .56s cubic-bezier(.215,.61,.355,1) forwards;"
-  , "  animation-delay: calc(3.4s + var(--i) * .07s);"
-  , "}"
-  , ".hero-nav a:hover { color: #fff; }"
   , "@keyframes heroFadeUp {"
   , "  from { opacity: 0; transform: translateY(20px); }"
   , "  to   { opacity: 1; transform: translateY(0); }"
   , "}"
   , "@media (max-width: 760px) {"
   , "  .hero-bg { background-size: auto 100%; }"
+  , "}"
+  , ""
+
+  -- ── Fixed bottom navigation ────────────────────────────────────────────────
+  , ".fixed-nav {"
+  , "  position: fixed;"
+  , "  bottom: 0;"
+  , "  left: 0;"
+  , "  right: 0;"
+  , "  z-index: 400;"
+  , "  display: flex;"
+  , "  justify-content: center;"
+  , "  flex-wrap: wrap;"
+  , "  gap: .35rem .85rem;"
+  , "  padding: .6rem 1.2rem .7rem;"
+  , "  background: rgba(20,13,7,.74);"
+  , "  backdrop-filter: blur(24px) saturate(1.2);"
+  , "  -webkit-backdrop-filter: blur(24px) saturate(1.2);"
+  , "  border-top: 1px solid rgba(255,255,255,.09);"
+  , "  opacity: 0;"
+  , "  transform: translateY(100%);"
+  , "}"
+  , ".fixed-nav-link {"
+  , "  color: rgba(255,255,255,.65);"
+  , "  text-decoration: none;"
+  , "  font-size: .57rem;"
+  , "  letter-spacing: .22em;"
+  , "  text-transform: uppercase;"
+  , "  padding: .22rem 0 .18rem;"
+  , "  border-bottom: 1.5px solid transparent;"
+  , "  transition: color .25s, border-color .25s;"
+  , "  white-space: nowrap;"
+  , "}"
+  , ".fixed-nav-link:hover { color: rgba(255,255,255,.92); }"
+  , ".fixed-nav-link.is-active {"
+  , "  color: #d4b483;"
+  , "  border-bottom-color: #d4b483;"
   , "}"
   , ""
 
@@ -790,9 +681,9 @@ siteCSS = T.unlines
 
   -- ── Glass cards ───────────────────────────────────────────────────────────
   , ".glass {"
-  , "  background: rgba(138,108,76,.24);"
-  , "  backdrop-filter: blur(22px) saturate(1.25);"
-  , "  -webkit-backdrop-filter: blur(22px) saturate(1.25);"
+  , "  background: rgba(138,108,76,.10);"
+  , "  backdrop-filter: none;"
+  , "  -webkit-backdrop-filter: none;"
   , "  border: 1px solid rgba(255,255,255,.13);"
   , "  padding: 1.8rem 2.2rem;"
   , "  margin: 1.1rem 1.8rem;"
@@ -809,30 +700,43 @@ siteCSS = T.unlines
   , "}"
   , ".rect { border-radius: 14px; max-width: 320px; }"
   , ""
+  -- These override .glass margin — must come after .glass in the cascade.
+  , ".rsvp-confirm {"
+  , "  text-align: center;"
+  , "  margin: 1.1rem auto;"
+  , "  width: calc(100% - 3.6rem);"
+  , "}"
+  , ".ubicacion-card {"
+  , "  text-align: center;"
+  , "  margin: 1.1rem auto;"
+  , "  max-width: 380px;"
+  , "  width: calc(100% - 3.6rem);"
+  , "}"
+  , ".map-embed {"
+  , "  display: block;"
+  , "  width: 100%;"
+  , "  height: 220px;"
+  , "  border: 0;"
+  , "  border-radius: 8px;"
+  , "  margin-top: 1rem;"
+  , "  opacity: .88;"
+  , "}"
+  , ""
 
   -- ── Dress code ────────────────────────────────────────────────────────────
-  , ".dress-info {"
-  , "  position: relative;"
-  , "  z-index: 2;"
-  , "  margin-top: 3rem;"
-  , "}"
-  , ".dress-runway {"
+  -- Overlay is top-anchored; 3.png already contains all visual elements.
+  , ".dress-code-overlay {"
   , "  position: absolute;"
-  , "  bottom: 4%;"
-  , "  left: 0; right: 0;"
+  , "  inset: 0;"
+  , "  bottom: auto;"
+  , "  background: linear-gradient(180deg, rgba(22,14,6,.62) 0%, transparent 55%);"
   , "  display: flex;"
-  , "  justify-content: center;"
-  , "  align-items: flex-end;"
-  , "  gap: clamp(1rem, 6vw, 3rem);"
-  , "  pointer-events: none;"
+  , "  flex-direction: column;"
+  , "  align-items: center;"
+  , "  padding: 2.2rem 1.8rem 0;"
   , "  z-index: 2;"
   , "}"
-  , ".dress-cutout {"
-  , "  height: clamp(160px, 36vh, 320px);"
-  , "  width: auto;"
-  , "  filter: drop-shadow(0 12px 28px rgba(0,0,0,.55));"
-  , "  will-change: transform, opacity;"
-  , "}"
+  , ".dress-info { margin: 1.1rem auto; text-align: center; }"
   , ""
 
   -- ── RSVP button (shared by all action buttons) ────────────────────────────
@@ -858,7 +762,7 @@ siteCSS = T.unlines
   , ".rsvp-overlay {"
   , "  position: fixed;"
   , "  inset: 0;"
-  , "  z-index: 200;"
+  , "  z-index: 500;"
   , "  display: flex;"
   , "  align-items: center;"
   , "  justify-content: center;"
@@ -1027,33 +931,17 @@ siteCSS = T.unlines
   , ".video-wa-btn { margin-top: .8rem; }"
   , ""
 
-  -- ── Countdown ─────────────────────────────────────────────────────────────
-  , ".countdown {"
-  , "  padding: 1.2rem 1.8rem 2.5rem;"
-  , "  font-size: .68rem;"
-  , "  letter-spacing: .2em;"
-  , "  color: rgba(255,255,255,.52);"
-  , "  text-transform: uppercase;"
-  , "}"
-  , ""
-
-  -- ── Closing ───────────────────────────────────────────────────────────────
-  , ".closing-text { padding: 0 1.8rem 1.8rem; }"
-  , ".closing-line {"
-  , "  display: block;"
-  , "  font-family: 'Great Vibes', cursive;"
-  , "  font-weight: 400;"
-  , "  font-size: clamp(3.6rem, 15vw, 7.5rem);"
-  , "  line-height: .9;"
-  , "  color: #fff;"
-  , "  overflow: visible;"
+  -- ── [data-reveal] initial state ────────────────────────────────────────────
+  , "[data-reveal] {"
+  , "  opacity: 0;"
+  , "  transform: translateY(26px);"
   , "}"
   , ""
 
   -- ── Back to top ───────────────────────────────────────────────────────────
   , ".back-to-top {"
   , "  position: fixed;"
-  , "  bottom: 2rem;"
+  , "  bottom: 5rem;"
   , "  right: 1.6rem;"
   , "  z-index: 300;"
   , "  width: 3rem;"
@@ -1099,9 +987,9 @@ siteCSS = T.unlines
   , "  .intro { display: none !important; }"
   , "  .progress-bar { display: none; }"
   , "  .intro-word, .intro-rule, .intro-sign { animation: none; opacity: 1; transform: none; }"
-  , "  .hero-date, .hero-nav a { animation: none; opacity: 1; transform: none; }"
+  , "  .hero-date { animation: none; opacity: 1; transform: none; }"
   , "  .marquee-track { animation: none; }"
   , "  [data-reveal] { opacity: 1; transform: none; }"
-  , "  .zoom-section .section-photo { clip-path: none; transform: none; }"
+  , "  .fixed-nav { opacity: 1; transform: none; }"
   , "}"
   ]

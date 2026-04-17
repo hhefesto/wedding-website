@@ -29,7 +29,7 @@
     var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     initBackToTop();
-    initCollageActiveState();
+    initFixedNav();
 
     if (prefersReduced) {
       revealStaticFallback();
@@ -37,8 +37,7 @@
     }
 
     initProgressBar();
-    initCollageEntrance();
-    initZoomSections();
+    initParallaxSections();
     ScrollTrigger.refresh();
   }
 
@@ -47,10 +46,6 @@
   function revealStaticFallback() {
     document.querySelectorAll('[data-reveal]').forEach(function (el) {
       el.style.opacity = '1';
-      el.style.transform = 'none';
-    });
-    document.querySelectorAll('.zoom-section .section-photo').forEach(function (el) {
-      el.style.clipPath = 'none';
       el.style.transform = 'none';
     });
   }
@@ -72,108 +67,93 @@
     });
   }
 
-  // ── Collage entrance (scroll-triggered stagger) ─────────────────────────────
+  // ── Parallax image sections ──────────────────────────────────────────────────
+  // Each .image-section: parallax drift on the photo + staggered content reveal
+  // + soft crossfade-out as you scroll past.
 
-  function initCollageEntrance() {
-    var cards = document.querySelectorAll('.collage-card');
-    if (!cards.length) return;
-
-    gsap.from('.collage-heading > *', {
-      opacity: 0,
-      y: 22,
-      duration: 0.72,
-      stagger: 0.08,
-      ease: 'power2.out',
-      scrollTrigger: {
-        trigger: '#collage',
-        start: 'top 74%',
-        once: true
-      }
-    });
-
-    gsap.from(cards, {
-      opacity: 0,
-      y: 26,
-      scale: 0.9,
-      duration: 0.75,
-      stagger: 0.09,
-      ease: 'power3.out',
-      delay: 0.1,
-      scrollTrigger: {
-        trigger: '#collage',
-        start: 'top 74%',
-        once: true
-      }
-    });
-  }
-
-  // ── Zoom sections (pinned clip-path reveal on scroll) ────────────────────────
-
-  function initZoomSections() {
-    var sections = document.querySelectorAll('.zoom-section');
+  function initParallaxSections() {
+    var sections = document.querySelectorAll('.image-section');
     if (!sections.length) return;
 
     sections.forEach(function (section) {
-      var photo = section.querySelector('.section-photo');
-      if (!photo) return;
-
+      var img = section.querySelector('.section-img');
       var reveals = section.querySelectorAll('[data-reveal]');
-      var origin = section.getAttribute('data-zoom-origin') || '50% 50%';
 
-      gsap.set(photo, {
-        transformOrigin: origin,
-        scale: 1.22,
-        clipPath: 'inset(18% 10% 18% 10% round 22px)'
-      });
+      // Parallax: photo drifts up at ~0.5x scroll speed (subtle, cinematic)
+      if (img) {
+        gsap.to(img, {
+          yPercent: -10,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: section,
+            start: 'top bottom',
+            end: 'bottom top',
+            scrub: 0.7,
+            invalidateOnRefresh: true
+          }
+        });
+      }
 
-      gsap.set(reveals, { autoAlpha: 0, y: 28 });
-
-      var tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: section,
-          start: 'top top',
-          end: '+=130%',
-          pin: true,
-          scrub: 0.55,
-          invalidateOnRefresh: true,
-          anticipatePin: 1
-        }
-      });
-
-      tl.to(photo, {
-        scale: 1,
-        clipPath: 'inset(0% 0% 0% 0% round 0px)',
-        ease: 'none'
-      }, 0)
-        .to(reveals, {
+      // Staggered overlay content reveal on scroll into view
+      if (reveals.length) {
+        gsap.set(reveals, { autoAlpha: 0, y: 28 });
+        gsap.to(reveals, {
           autoAlpha: 1,
           y: 0,
-          stagger: 0.08,
-          duration: 0.4,
-          ease: 'power2.out'
-        }, 0.3);
+          stagger: 0.11,
+          duration: 0.72,
+          ease: 'power2.out',
+          scrollTrigger: {
+            trigger: section,
+            start: 'top 62%',
+            once: true
+          }
+        });
+      }
+
+      // Crossfade: section dims gently as you scroll past
+      gsap.to(section, {
+        opacity: 0.22,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: section,
+          start: 'bottom 72%',
+          end: 'bottom 10%',
+          scrub: true
+        }
+      });
     });
   }
 
-  // ── Collage active-state (highlight card when its section is in view) ────────
-  // Smooth scrolling is handled by CSS `scroll-behavior: smooth` on html.
+  // ── Fixed bottom nav: entrance + active section highlighting ─────────────────
 
-  function initCollageActiveState() {
-    var cards = document.querySelectorAll('.collage-card');
-    if (!cards.length) return;
+  function initFixedNav() {
+    var nav = document.getElementById('fixed-nav');
+    if (!nav) return;
 
-    document.querySelectorAll('.zoom-section').forEach(function (section) {
-      var id = section.id;
-      if (!id) return;
+    // Slide up into view after the intro animation completes (~3.45s)
+    gsap.to(nav, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: 'power2.out',
+      delay: 3.6
+    });
 
+    // Highlight the nav link matching whichever section is centred in viewport
+    var links = nav.querySelectorAll('.fixed-nav-link');
+    document.querySelectorAll('.image-section').forEach(function (section) {
       ScrollTrigger.create({
         trigger: section,
         start: 'top center',
         end: 'bottom center',
         onToggle: function (self) {
-          var match = document.querySelector('.collage-card[href="#' + id + '"]');
-          if (!match) return;
-          match.classList.toggle('is-active', self.isActive);
+          var id = section.id;
+          links.forEach(function (link) {
+            if (link.getAttribute('data-section') === id) {
+              link.classList.toggle('is-active', self.isActive);
+            }
+          });
         }
       });
     });
@@ -218,4 +198,4 @@
     });
   }
 
-})();;
+})();

@@ -123,7 +123,7 @@
           test -f ${self'.packages.website}/out.js      || (echo "MISSING out.js"; exit 1)
           test -f ${self'.packages.website}/lib.js      || (echo "MISSING lib.js"; exit 1)
           test -d ${self'.packages.website}/images      || (echo "MISSING images/"; exit 1)
-          for img in 1.png 2.png 3.png 4.png 5.png 6.png 7.png; do
+          for img in 1.png 2.png 3.png 4.png 5.png; do
             test -f ${self'.packages.website}/images/$img \
               || (echo "MISSING images/$img"; exit 1)
           done
