@@ -11,6 +11,9 @@ import Control.Monad (forM_, void)
 import Language.Javascript.JSaddle (eval, MonadJSM, liftJSM)
 import Reflex.Dom
 
+underConstructionScript :: String
+underConstructionScript = "window.alert('Website under construction')"
+
 -- ── Entry point ───────────────────────────────────────────────────────────────
 
 main :: IO ()
@@ -28,13 +31,12 @@ bodyW = do
   introOverlay
   progressBar
   heroSection
-  openRsvpE <- rsvpSection
+  rsvpSection
   videoMsgSection
   ubicacionSection
   dressCodeSection
   mesaRegalosSection
   fixedNav
-  rsvpOverlay openRsvpE
   backToTop
   pb <- getPostBuild
   performEvent_ $ liftJSM (void $ eval navHighlightingJS) <$ pb
@@ -177,16 +179,16 @@ dressCodeSection =
 
 -- ── RSVP ─────────────────────────────────────────────────────────────────────
 
-rsvpSection :: (DomBuilder t m, MonadHold t m, PostBuild t m) => m (Event t ())
+rsvpSection :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 rsvpSection =
   secImage "rsvp" $ do
     elAttr "img"
       ( "class"   =: "section-img"
-     <> "src"     =: "images/1.png"
+     <> "src"     =: "./images/6.png"
      <> "alt"     =: ""
      <> "loading" =: "lazy"
       ) blank
-    openE <- elAttr "div" ("class" =: "section-overlay") $ do
+    clickE <- elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "RSVP"
       e <- elAttr "div" ("class" =: "glass rect rsvp-confirm" <> "data-reveal" =: "") $ do
         el "p" $ text "Por favor confirma tu asistencia"
@@ -194,7 +196,7 @@ rsvpSection =
         (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Confirmar \8594"
         return (() <$ domEvent Click btnEl)
       return e
-    return openE
+    performEvent_ $ liftJSM (void $ eval underConstructionScript) <$ clickE
 
 -- ── RSVP overlay — pure Reflex state machine ─────────────────────────────────
 -- All 4 step divs stay in the DOM; stepDyn drives CSS show/hide so inputs
@@ -373,7 +375,7 @@ copyButton val = mdo
 
 -- ── VIDEO PARA LOS NOVIOS ─────────────────────────────────────────────────────
 
-videoMsgSection :: DomBuilder t m => m ()
+videoMsgSection :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 videoMsgSection =
   secImage "video-mensaje" $ do
     elAttr "img"
@@ -391,14 +393,12 @@ videoMsgSection =
           elAttr "p" ("class" =: "video-msg-text") $
             text "Gr\225banos un video corto deseando lo mejor a los novios \
                  \y env\237anoslo por WhatsApp."
-          elAttr "a"
-            ( "class"        =: "rsvp-btn video-wa-btn"
-           <> "href"         =: "https://wa.me/PLACEHOLDER?text=\
-                                \Video%20para%20Daniel%20y%20Ana%20Cristina%20\
-                                \%F0%9F%8E%AC"
-           <> "target" =: "_blank"
-           <> "rel"    =: "noopener noreferrer"
+          (btnEl, _) <- elAttr' "button"
+            ( "class" =: "rsvp-btn video-wa-btn"
+           <> "type"  =: "button"
             ) $ text "Enviar video \8594"
+          let clickE = domEvent Click btnEl
+          performEvent_ $ liftJSM (void $ eval underConstructionScript) <$ clickE
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
