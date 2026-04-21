@@ -103,6 +103,22 @@
           '');
         };
 
+        # `nix run .#build-site` → sync built static site into ./site
+        apps.build-site = {
+          type    = "app";
+          program = toString (pkgs.writeShellScript "build-site" ''
+            set -euo pipefail
+
+            target_dir="$PWD/site"
+            mkdir -p "$target_dir"
+
+            ${pkgs.rsync}/bin/rsync -r --delete --no-perms --chmod=Du+rwx,Fu+rw \
+              ${self'.packages.website}/ "$target_dir/"
+
+            echo "Local deployable site refreshed in: $target_dir"
+          '');
+        };
+
         # ── Checks ──────────────────────────────────────────────────────────
 
         # Ensures the GHCJS static build succeeds

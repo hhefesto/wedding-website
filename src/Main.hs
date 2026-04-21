@@ -11,9 +11,6 @@ import Control.Monad (forM_, void)
 import Language.Javascript.JSaddle (eval, MonadJSM, liftJSM)
 import Reflex.Dom
 
-underConstructionScript :: String
-underConstructionScript = "window.alert('Website under construction')"
-
 -- ── Entry point ───────────────────────────────────────────────────────────────
 
 main :: IO ()
@@ -31,13 +28,14 @@ bodyW = do
   introOverlay
   progressBar
   heroSection
-  rsvpSection
-  videoMsgSection
+  rsvpOpenE <- rsvpSection
+  videoOpenE <- videoMsgSection
   ubicacionSection
   dressCodeSection
   mesaRegalosSection
   fixedNav
   backToTop
+  underConstructionOverlay (leftmost [rsvpOpenE, videoOpenE])
   pb <- getPostBuild
   performEvent_ $ liftJSM (void $ eval navHighlightingJS) <$ pb
 
@@ -179,7 +177,7 @@ dressCodeSection =
 
 -- ── RSVP ─────────────────────────────────────────────────────────────────────
 
-rsvpSection :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
+rsvpSection :: DomBuilder t m => m (Event t ())
 rsvpSection =
   secImage "rsvp" $ do
     elAttr "img"
@@ -188,7 +186,7 @@ rsvpSection =
      <> "alt"     =: ""
      <> "loading" =: "lazy"
       ) blank
-    clickE <- elAttr "div" ("class" =: "section-overlay") $ do
+    elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "RSVP"
       e <- elAttr "div" ("class" =: "glass rect rsvp-confirm" <> "data-reveal" =: "") $ do
         el "p" $ text "Por favor confirma tu asistencia"
@@ -196,7 +194,6 @@ rsvpSection =
         (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Confirmar \8594"
         return (() <$ domEvent Click btnEl)
       return e
-    performEvent_ $ liftJSM (void $ eval underConstructionScript) <$ clickE
 
 -- ── RSVP overlay — pure Reflex state machine ─────────────────────────────────
 -- All 4 step divs stay in the DOM; stepDyn drives CSS show/hide so inputs
@@ -348,34 +345,29 @@ mesaRegalosSection =
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
         text "MESA DE REGALOS"
       elAttr "div" ("class" =: "h-track" <> "data-reveal" =: "") $
-        hCard "LIVERPOOL" "51981423" (Just "51981423")
+        hCard
+          "LIVERPOOL"
+          "51981423"
+          (Just "https://mesaderegalos.liverpool.com.mx/milistaderegalos/51981423")
 
-hCard :: (MonadWidget t m, MonadJSM (Performable m)) => Text -> Text -> Maybe Text -> m ()
-hCard name number mCopy =
+hCard :: DomBuilder t m => Text -> Text -> Maybe Text -> m ()
+hCard name number mLink =
   elAttr "div" ("class" =: "h-card glass rect registry-card") $ do
     elAttr "p" ("class" =: "mesa-label") $ text name
     elAttr "p" ("class" =: "registry-number") $ text number
-    case mCopy of
+    case mLink of
       Nothing  -> blank
-      Just val -> copyButton val
-
--- Button that writes val to the clipboard and temporarily shows "¡Copiado!".
-copyButton :: (MonadWidget t m, MonadJSM (Performable m)) => Text -> m ()
-copyButton val = mdo
-  resetE  <- delay 1.4 clickE
-  labelDyn <- holdDyn "Copiar" $ leftmost
-    [ "\xa1Copiado!" <$ clickE
-    , "Copiar"       <$ resetE
-    ]
-  (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn copy-btn") $
-    dynText labelDyn
-  let clickE = domEvent Click btnEl
-  performEvent_ $ ffor clickE $ \_ ->
-    liftJSM $ void $ eval ("navigator.clipboard.writeText('" <> T.unpack val <> "'")
+      Just url ->
+        elAttr "a"
+          ( "class" =: "rsvp-btn registry-link-btn"
+         <> "href" =: url
+         <> "target" =: "_blank"
+         <> "rel" =: "noopener noreferrer"
+          ) $ text "Ver mesa de regalos \8594"
 
 -- ── VIDEO PARA LOS NOVIOS ─────────────────────────────────────────────────────
 
-videoMsgSection :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
+videoMsgSection :: DomBuilder t m => m (Event t ())
 videoMsgSection =
   secImage "video-mensaje" $ do
     elAttr "img"
@@ -397,8 +389,44 @@ videoMsgSection =
             ( "class" =: "rsvp-btn video-wa-btn"
            <> "type"  =: "button"
             ) $ text "Enviar video \8594"
-          let clickE = domEvent Click btnEl
-          performEvent_ $ liftJSM (void $ eval underConstructionScript) <$ clickE
+          return (domEvent Click btnEl)
+
+-- ── Under construction popup ──────────────────────────────────────────────────
+
+underConstructionOverlay :: MonadWidget t m => Event t () -> m ()
+underConstructionOverlay openE = mdo
+  visibleDyn <- holdDyn False $ leftmost [True <$ openE, False <$ closeE]
+  let overlayAttrs = ffor visibleDyn $ \isVisible ->
+        "id" =: "under-construction-overlay" <> "class" =: "construction-overlay"
+          <> if isVisible then mempty else "style" =: "display:none"
+
+  closeE <- elDynAttr "div" overlayAttrs $ do
+    elAttr "div"
+      ( "class" =: "construction-backdrop"
+     <> "aria-hidden" =: "true"
+      ) blank
+    elAttr "div"
+      ( "class" =: "construction-modal glass rect"
+     <> "role" =: "dialog"
+     <> "aria-modal" =: "true"
+      ) $ do
+      (closeBtnEl, _) <- elAttr' "button"
+        ( "class" =: "construction-close"
+       <> "type" =: "button"
+       <> "aria-label" =: "Cerrar"
+        ) $ text "\215"
+      elAttr "p" ("class" =: "construction-kicker") $ text "AVISO"
+      elAttr "h3" ("class" =: "construction-title") $
+        text "Website under construction"
+      elAttr "p" ("class" =: "construction-copy") $
+        text "Estamos afinando esta secci\243n para compartirla pronto."
+      (okBtnEl, _) <- elAttr' "button"
+        ( "class" =: "rsvp-btn construction-ok"
+       <> "type" =: "button"
+        ) $ text "Entendido"
+      return $ leftmost [domEvent Click closeBtnEl, domEvent Click okBtnEl]
+
+  return ()
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -428,11 +456,23 @@ siteCSS = T.unlines
   -- ── Reset ─────────────────────────────────────────────────────────────────
   , "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }"
   , "html { scroll-behavior: smooth; }"
+  , ":root {"
+  , "  --photo-frame-width: min(100vw, 71.45svh);"
+  , "  --card-width: min(62vw, 44.30svh);"
+  , "  --card-bottom-gap: clamp(7.8rem, 12svh, 10.9rem);"
+  , "  --card-lift: -15%;"
+  , "}"
   , "body {"
   , "  font-family: 'Courier Prime', 'Courier New', monospace;"
   , "  background: #1c1410;"
   , "  color: #f0ebe0;"
   , "  overflow-x: hidden;"
+  , "}"
+  , "@media (max-width: 640px) {"
+  , "  :root {"
+  , "    --card-width: min(66vw, 47.2svh);"
+  , "    --card-bottom-gap: clamp(5.9rem, 9.6svh, 7.4rem);"
+  , "  }"
   , "}"
   , ""
 
@@ -498,7 +538,7 @@ siteCSS = T.unlines
   , "  left: 0;"
   , "  right: 0;"
   , "  z-index: 2;"
-  , "  padding: 1.5rem 1.8rem 4.5rem;"
+  , "  padding: 1.5rem 1.8rem var(--card-bottom-gap);"
   , "  background: linear-gradient(to top, rgba(28,20,16,.78) 0%, rgba(28,20,16,.30) 65%, transparent 100%);"
   , "  display: flex;"
   , "  flex-direction: column;"
@@ -682,8 +722,8 @@ siteCSS = T.unlines
 
   -- ── Section labels ────────────────────────────────────────────────────────
   , ".label {"
-  , "  font-size: .63rem;"
-  , "  letter-spacing: .27em;"
+  , "  font-size: clamp(1.47rem, 1.44vw, 1.93rem);"
+  , "  letter-spacing: .17em;"
   , "  text-transform: uppercase;"
   , "  color: rgba(255,255,255,.87);"
   , "  padding: 1.8rem 1.8rem 0;"
@@ -723,32 +763,37 @@ siteCSS = T.unlines
   , "  backdrop-filter: none;"
   , "  -webkit-backdrop-filter: none;"
   , "  border: 1px solid rgba(255,255,255,.13);"
-  , "  padding: 1.8rem 2.2rem;"
+  , "  padding: clamp(1.6rem, 2.8vw, 2.35rem) clamp(1.7rem, 3.1vw, 2.6rem);"
   , "  margin: 1.1rem 1.8rem;"
-  , "  line-height: 2;"
-  , "  font-size: .87rem;"
+  , "  line-height: 1.7;"
+  , "  font-size: clamp(1.29rem, 1.26vw, 1.63rem);"
   , "  color: rgba(255,255,255,.9);"
   , "  position: relative;"
   , "  z-index: 1;"
   , "}"
+  , ".glass p + p { margin-top: .45rem; }"
   , ".blob {"
   , "  border-radius: 44% 56% 38% 62% / 52% 44% 56% 48%;"
   , "  width: calc(100% - 3.6rem);"
   , "  max-width: 420px;"
   , "}"
-  , ".rect { border-radius: 14px; max-width: 320px; }"
+  , ".rect {"
+  , "  border-radius: 14px;"
+  , "  width: var(--card-width);"
+  , "  max-width: calc(var(--photo-frame-width) - 3rem);"
+  , "}"
   , ""
   -- These override .glass margin — must come after .glass in the cascade.
   , ".rsvp-confirm {"
   , "  text-align: center;"
   , "  margin: 1.1rem auto;"
-  , "  width: calc(100% - 3.6rem);"
   , "}"
   , ".ubicacion-card {"
   , "  text-align: center;"
   , "  margin: 1.1rem auto;"
-  , "  max-width: 380px;"
-  , "  width: calc(100% - 3.6rem);"
+  , "}"
+  , ".rsvp-confirm, .ubicacion-card, .dress-info, .registry-card, .video-card {"
+  , "  transform: translateY(var(--card-lift));"
   , "}"
   , ".map-embed {"
   , "  display: block;"
@@ -786,7 +831,7 @@ siteCSS = T.unlines
   , "  border: 1px solid rgba(255,255,255,.46);"
   , "  border-radius: 4px;"
   , "  padding: .5rem 1.3rem;"
-  , "  font-size: .73rem;"
+  , "  font-size: clamp(1.1rem, .86vw, 1.27rem);"
   , "  letter-spacing: .1em;"
   , "  font-family: 'Courier Prime', monospace;"
   , "  cursor: pointer;"
@@ -901,6 +946,77 @@ siteCSS = T.unlines
   , ".rsvp-whatsapp-btn:hover { background: rgba(37,211,102,.30); }"
   , ""
 
+  -- ── Under construction popup ──────────────────────────────────────────────
+  , ".construction-overlay {"
+  , "  position: fixed;"
+  , "  inset: 0;"
+  , "  z-index: 560;"
+  , "  display: flex;"
+  , "  align-items: center;"
+  , "  justify-content: center;"
+  , "  padding: 1.2rem;"
+  , "}"
+  , ".construction-backdrop {"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  background: radial-gradient(circle at 30% 20%, rgba(180,139,92,.24), rgba(18,12,5,.92) 58%);"
+  , "  backdrop-filter: blur(10px) saturate(1.14);"
+  , "  -webkit-backdrop-filter: blur(10px) saturate(1.14);"
+  , "}"
+  , ".construction-modal {"
+  , "  position: relative;"
+  , "  z-index: 1;"
+  , "  width: min(92vw, 420px);"
+  , "  text-align: center;"
+  , "  background: rgba(138,108,76,.36);"
+  , "  border: 1px solid rgba(255,255,255,.24);"
+  , "  border-radius: 22px;"
+  , "  box-shadow: 0 18px 60px rgba(0,0,0,.48);"
+  , "  padding: 2.15rem 1.5rem 1.65rem;"
+  , "  animation: constructionPop .35s cubic-bezier(.19,.86,.26,1) both;"
+  , "}"
+  , "@keyframes constructionPop {"
+  , "  from { opacity: 0; transform: translateY(16px) scale(.96); }"
+  , "  to   { opacity: 1; transform: translateY(0) scale(1); }"
+  , "}"
+  , ".construction-close {"
+  , "  position: absolute;"
+  , "  top: .8rem;"
+  , "  right: .95rem;"
+  , "  border: none;"
+  , "  background: transparent;"
+  , "  color: rgba(255,255,255,.62);"
+  , "  font-size: 1.8rem;"
+  , "  line-height: 1;"
+  , "  cursor: pointer;"
+  , "  transition: color .2s;"
+  , "}"
+  , ".construction-close:hover { color: #fff; }"
+  , ".construction-kicker {"
+  , "  font-size: .62rem;"
+  , "  letter-spacing: .25em;"
+  , "  text-transform: uppercase;"
+  , "  color: rgba(255,255,255,.7);"
+  , "}"
+  , ".construction-title {"
+  , "  margin-top: .55rem;"
+  , "  font-size: 1.16rem;"
+  , "  letter-spacing: .05em;"
+  , "  color: #fff;"
+  , "  font-weight: 400;"
+  , "}"
+  , ".construction-copy {"
+  , "  margin-top: .8rem;"
+  , "  color: rgba(255,255,255,.84);"
+  , "  font-size: .83rem;"
+  , "  line-height: 1.8;"
+  , "}"
+  , ".construction-ok {"
+  , "  margin-top: 1.1rem;"
+  , "  min-width: 10.5rem;"
+  , "}"
+  , ""
+
   -- ── Mesa de Regalos — horizontal track ────────────────────────────────────
   , ".h-track {"
   , "  display: flex;"
@@ -916,30 +1032,25 @@ siteCSS = T.unlines
   , "  position: relative;"
   , "  z-index: 1;"
   , "}"
-  , ".h-card {"
-  , "  min-width: 260px;"
-  , "  max-width: 320px;"
-  , "  flex-shrink: 0;"
-  , "  margin: 0;"
-  , "}"
-  , ".registry-card { line-height: 1.7; }"
+  , ".h-card { flex-shrink: 0; margin: 0; }"
+  , ".registry-card { line-height: 1.7; text-align: center; }"
   , ".mesa-label {"
-  , "  font-size: .63rem;"
+  , "  font-size: .72rem;"
   , "  letter-spacing: .27em;"
   , "  text-transform: uppercase;"
   , "  color: rgba(255,255,255,.87);"
   , "  margin-bottom: .5rem;"
   , "}"
   , ".registry-number {"
-  , "  font-size: 1.3rem;"
+  , "  font-size: 1.5rem;"
   , "  letter-spacing: .12em;"
   , "  color: #fff;"
   , "  margin-bottom: .6rem;"
   , "}"
-  , ".copy-btn {"
+  , ".registry-link-btn {"
   , "  margin-top: .4rem;"
-  , "  font-size: .65rem;"
-  , "  padding: .32rem .9rem;"
+  , "  font-size: clamp(1.06rem, .83vw, 1.2rem);"
+  , "  padding: .44rem 1.05rem;"
   , "}"
   , "@media (max-width: 640px) {"
   , "  .h-track {"
@@ -953,7 +1064,7 @@ siteCSS = T.unlines
 
   -- ── Video mensaje ─────────────────────────────────────────────────────────
   , ".video-mask { overflow: hidden; }"
-  , ".video-card { max-width: 320px; text-align: center; margin-left: auto; margin-right: auto; }"
+  , ".video-card { text-align: center; margin-left: auto; margin-right: auto; }"
   , ".video-msg-icon {"
   , "  display: block;"
   , "  font-size: 2.4rem;"
@@ -961,9 +1072,9 @@ siteCSS = T.unlines
   , "  line-height: 1;"
   , "}"
   , ".video-msg-text {"
-  , "  font-size: .85rem;"
+  , "  font-size: 1em;"
   , "  color: rgba(255,255,255,.85);"
-  , "  line-height: 1.8;"
+  , "  line-height: 1.72;"
   , "  margin-bottom: .8rem;"
   , "}"
   , ".video-wa-btn { margin-top: .8rem; }"

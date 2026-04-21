@@ -9,7 +9,7 @@ array-0.5.4.0-BY9BworFlmHJapi9znoqNH:15
 assoc-1.0.2-9r5CYDItYfw2716RlsM2q0:2
 attoparsec-0.14.4-B2iQnzVBBFTKhcVPsQN0rt-attoparsec-internal:6
 attoparsec-0.14.4-I8c7AMvf6rV5ZJN2QPl657:16
-base:                    1748125
+base:                    1690561
 base-compat-0.11.2-JQpKDsVhHsCHPlgorbNGMx:118
 base-compat-batteries-0.11.2-Ga31QQ7sOlIgAVr2fMCMg:118
 base-orphans-0.8.7-68gGt71vpOZ5uwbcNbxwhZ:2
@@ -43,7 +43,7 @@ exceptions-0.10.5-BqyE5VZGB6MJU8pEcckH3M:2
 free-5.1.9-BT0DrMPCj7zEwehq6rjGJZ:20
 generically-0.1-35Te45UlhoWD8zU0TKv2Uc:1
 ghc-boot-th-8.10.7-FQtGTtjFMOPJdcMgIgVdDb:9253
-ghc-prim:                144979
+ghc-prim:                144161
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf:8091
 ghcjs-dom-0.9.4.0-7D07xJnME4h8365CyighbD:4824
 ghcjs-dom-jsffi-0.9.4.0-47s8EUYI9ptHH2NrIQGHdX:452038
@@ -54,7 +54,7 @@ haskell-src-meta-0.8.10-IcbrfrN0Yc93XnYTMg7Yxl:6
 indexed-traversable-0.1.2-GD8npio83CSFiz04J1mXkd:5
 indexed-traversable-instances-0.1.1.1-LvEDkxbyZx8CeLTfKJ3EOq:1
 integer-logarithms-1.0.3.1-IYkBdh7wKb2CHfnUySx2jj:4
-integer-wired-in:        340571
+integer-wired-in:        36423
 jsaddle-0.9.8.2-DOc5JA9qWKc32sVbaacOyT:16
 kan-extensions-5.2.5-EC5Ak81elAI9Q64zbtgbBz:13
 keycode-0.2.2-Czn6b09jBhsByMfkX7XMG7:1
@@ -76,7 +76,7 @@ profunctors-5.6.2-5SxRgU7SWKJLS9EgQ0NK1D:16
 random-1.2.1.1-GdOCmgKIL7EDQkfgpQqW9R:7683
 ref-tf-0.5.0.1-7guyMWOh5nf1ozHjvkTku5:1
 reflection-2.1.6-2geGEngscoyF11gJEzOGky:7717
-reflex-0.9.2.0-H5N7cDK9stQEp1UcDEHTtO:7841520
+reflex-0.9.2.0-H5N7cDK9stQEp1UcDEHTtO:7812377
 reflex-dom-0.6.3.1-CFudMpsRYLQ1FGN5ho4SWm:3
 reflex-dom-core-0.8.0.0-BVBpLyoKjcc3VoNa9MZmjI:11494909
 scientific-0.3.7.0-5mgRNvjYRWv3mPytIhdHjG:5
@@ -93,18 +93,18 @@ text-1.2.4.1-6uG5rVV50DlG3V1Irt2qJZ:23778
 text-short-0.1.5-83tql5UYbdMEs8roEduy7C:5
 th-abstraction-0.4.3.0-5KnBYXhO4rl9iydQrA0x5u:3
 these-1.1.1.1-BPrWGiow4Go4C9rwUD8EPD:1525
-time-1.9.3-3RdsewIylHjEX08tJ1SRQd:3498
+time-1.9.3-3RdsewIylHjEX08tJ1SRQd:43
 time-compat-1.9.6.1-Ic9heUN7tt72jqMeiIVtiA:20
 transformers-0.5.6.2-FuVVxe7sxd9Djwd0OcZNKG:103712
 transformers-base-0.4.6-5vzvUNQkjWl5rKYpKtEujR:1
 transformers-compat-0.6.6-JIDysxDx5RHGzGmif9zRu:4
-type-equality-1-MnU7ikubviHyq0hfOcnDO:6017
+type-equality-1-MnU7ikubviHyq0hfOcnDO:1
 unbounded-delays-0.1.1.1-BwsGS8LWyIuJ326RAKjQ5K:2
 unordered-containers-0.2.17.0-AFrF27z0nr9EWVUGMShZGS:8
 uuid-types-1.0.5-3IW8DmCgl8oIpz1iDmHBqE:3
 vector-0.12.3.1-Jn822ltAQMG9EAuGGatnyM:21
 witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6:2
-zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:1735139
+zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:1825769
 
 
 code size per module:
@@ -262,7 +262,7 @@ base
     Data.Data:                          1
     Data.Dynamic:                       541
     Data.Either:                        1
-    Data.Eq:                            277
+    Data.Eq:                            1
     Data.Fixed:                         1
     Data.Foldable:                      1
     Data.Function:                      1
@@ -334,15 +334,15 @@ base
     GHC.Clock:                          1
     GHC.Conc:                           1
     GHC.Conc.IO:                        1
-    GHC.Conc.Signal:                    28333
+    GHC.Conc.Signal:                    28334
     GHC.Conc.Sync:                      1
     GHC.ConsoleHandler:                 1
     GHC.Constants:                      1
-    GHC.Desugar:                        30563
+    GHC.Desugar:                        5194
     GHC.Enum:                           1
     GHC.Environment:                    1178
     GHC.Err:                            31250
-    GHC.Exception:                      16569
+    GHC.Exception:                      15560
     GHC.Exception.Type:                 1
     GHC.ExecutionStack:                 1
     GHC.ExecutionStack.Internal:        1
@@ -392,7 +392,7 @@ base
     GHC.List:                           254
     GHC.MVar:                           325
     GHC.Maybe:                          1
-    GHC.Natural:                        1813
+    GHC.Natural:                        866
     GHC.Num:                            1
     GHC.OldList:                        1
     GHC.OverloadedLabels:               1
@@ -400,7 +400,7 @@ base
     GHC.Profiling:                      339
     GHC.Ptr:                            1
     GHC.RTS.Flags:                      1
-    GHC.Read:                           37705
+    GHC.Read:                           7742
     GHC.Real:                           1
     GHC.Records:                        1
     GHC.ResponseFile:                   1
@@ -415,7 +415,7 @@ base
     GHC.StaticPtr:                      1
     GHC.StaticPtr.Internal:             1
     GHC.Stats:                          1
-    GHC.Storable:                       47649
+    GHC.Storable:                       47650
     GHC.TopHandler:                     1
     GHC.TypeLits:                       1
     GHC.TypeNats:                       1
@@ -452,7 +452,7 @@ base
     Text.Show.Functions:                1
     Type.Reflection:                    1
     Type.Reflection.Unsafe:             201
-    Unsafe.Coerce:                      18329
+    Unsafe.Coerce:                      18327
 
 base-compat-0.11.2-JQpKDsVhHsCHPlgorbNGMx
     Control.Concurrent.Compat:          1
@@ -943,7 +943,7 @@ ghc-boot-th-8.10.7-FQtGTtjFMOPJdcMgIgVdDb
     GHC.Lexeme:                         9251
 
 ghc-prim
-    GHC.CString:                        38915
+    GHC.CString:                        36183
     GHC.Classes:                        1
     GHC.Debug:                          791
     GHC.IntWord64:                      1
@@ -951,7 +951,7 @@ ghc-prim
     GHC.Prim.Ext:                       221
     GHC.PrimopWrappers:                 9423
     GHC.Tuple:                          7208
-    GHC.Types:                          88418
+    GHC.Types:                          90332
 
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf
     Data.JSString:                      1
@@ -1693,7 +1693,7 @@ integer-wired-in
     GHC.Integer:                        1
     GHC.Integer.GMP.Internals:          1
     GHC.Integer.Logarithms:             1
-    GHC.Integer.Logarithms.Internals:   313336
+    GHC.Integer.Logarithms.Internals:   9188
     GHC.Integer.Type:                   27232
 
 jsaddle-0.9.8.2-DOc5JA9qWKc32sVbaacOyT
@@ -2011,7 +2011,7 @@ reflex-0.9.2.0-H5N7cDK9stQEp1UcDEHTtO
     Reflex.Requester.Base.Internal:     1
     Reflex.Requester.Class:             1
     Reflex.Spider:                      4745923
-    Reflex.Spider.Internal:             29144
+    Reflex.Spider.Internal:             1
     Reflex.Time:                        165007
     Reflex.TriggerEvent.Base:           5369
     Reflex.TriggerEvent.Class:          1
@@ -2251,7 +2251,7 @@ time-1.9.3-3RdsewIylHjEX08tJ1SRQd
     Data.Time.Clock.Internal.AbsoluteTime:1
     Data.Time.Clock.Internal.CTimespec: 1
     Data.Time.Clock.Internal.CTimeval:  1
-    Data.Time.Clock.Internal.DiffTime:  3456
+    Data.Time.Clock.Internal.DiffTime:  1
     Data.Time.Clock.Internal.NominalDiffTime:1
     Data.Time.Clock.Internal.POSIXTime: 1
     Data.Time.Clock.Internal.SystemTime:1
@@ -2337,7 +2337,7 @@ transformers-compat-0.6.6-JIDysxDx5RHGzGmif9zRu
     Paths_transformers_compat:          1
 
 type-equality-1-MnU7ikubviHyq0hfOcnDO
-    Data.Type.Equality.Hetero:          6017
+    Data.Type.Equality.Hetero:          1
 
 unbounded-delays-0.1.1.1-BwsGS8LWyIuJ326RAKjQ5K
     Control.Concurrent.Thread.Delay:    1
@@ -2386,9 +2386,9 @@ witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6
     Witherable:                         1
 
 zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd
-    Text.Encoding.Z:                    1735139
+    Text.Encoding.Z:                    1825769
 
 
 
-packed metadata: 906516
+packed metadata: 901956
 
