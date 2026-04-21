@@ -17,30 +17,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Build ────────────────────────────────────────────────────────────────────
-  build:
+  # ── Upload prebuilt static site (built locally) ─────────────────────────────
+  upload:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v14
-
-      - name: Enable Nix binary cache (reflex-frp + nixos)
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
-      - name: Build static website
-        run: nix build .#website --out-link ./result
+      - name: Verify prebuilt site exists
+        run: |
+          test -f ./site/index.html
+          test -f ./site/out.js
+          test -f ./site/rts.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./result
+          path: ./site
 
   # ── Deploy ───────────────────────────────────────────────────────────────────
   deploy:
-    needs: build
+    needs: upload
     runs-on: ubuntu-latest
     environment:
       name: github-pages
