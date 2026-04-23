@@ -383,12 +383,11 @@ videoMsgSection =
         elAttr "div" ("class" =: "glass rect video-card") $ do
           elAttr "span" ("class" =: "video-msg-icon") $ text "\127916"
           elAttr "p" ("class" =: "video-msg-text") $
-            text "Gr\225banos un video corto deseando lo mejor a los novios \
-                 \y env\237anoslo por WhatsApp."
+            text "M\225ndale un video corto a los novios."
           (btnEl, _) <- elAttr' "button"
             ( "class" =: "rsvp-btn video-wa-btn"
            <> "type"  =: "button"
-            ) $ text "Enviar video \8594"
+            ) $ text "Subir video"
           return (domEvent Click btnEl)
 
 -- ── Under construction popup ──────────────────────────────────────────────────
@@ -566,6 +565,7 @@ siteCSS = T.unlines
   , "  display: flex;"
   , "  align-items: center;"
   , "  justify-content: center;"
+  , "  pointer-events: none;"
   , "  animation: introFadeOut .82s ease-in-out 2.63s forwards;"
   , "}"
   , "@keyframes introFadeOut {"
@@ -792,7 +792,7 @@ siteCSS = T.unlines
   , "  text-align: center;"
   , "  margin: 1.1rem auto;"
   , "}"
-  , ".rsvp-confirm, .ubicacion-card, .dress-info, .registry-card, .video-card {"
+  , ".rsvp-confirm, .ubicacion-card, .dress-info {"
   , "  transform: translateY(var(--card-lift));"
   , "}"
   , ".map-embed {"

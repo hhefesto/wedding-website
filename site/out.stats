@@ -43,7 +43,7 @@ exceptions-0.10.5-BqyE5VZGB6MJU8pEcckH3M:2
 free-5.1.9-BT0DrMPCj7zEwehq6rjGJZ:20
 generically-0.1-35Te45UlhoWD8zU0TKv2Uc:1
 ghc-boot-th-8.10.7-FQtGTtjFMOPJdcMgIgVdDb:9253
-ghc-prim:                144161
+ghc-prim:                144076
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf:8091
 ghcjs-dom-0.9.4.0-7D07xJnME4h8365CyighbD:4824
 ghcjs-dom-jsffi-0.9.4.0-47s8EUYI9ptHH2NrIQGHdX:452038
@@ -104,7 +104,7 @@ unordered-containers-0.2.17.0-AFrF27z0nr9EWVUGMShZGS:8
 uuid-types-1.0.5-3IW8DmCgl8oIpz1iDmHBqE:3
 vector-0.12.3.1-Jn822ltAQMG9EAuGGatnyM:21
 witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6:2
-zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:1825769
+zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:1824893
 
 
 code size per module:
@@ -951,7 +951,7 @@ ghc-prim
     GHC.Prim.Ext:                       221
     GHC.PrimopWrappers:                 9423
     GHC.Tuple:                          7208
-    GHC.Types:                          90332
+    GHC.Types:                          90247
 
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf
     Data.JSString:                      1
@@ -2386,9 +2386,9 @@ witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6
     Witherable:                         1
 
 zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd
-    Text.Encoding.Z:                    1825769
+    Text.Encoding.Z:                    1824893
 
 
 
-packed metadata: 901956
+packed metadata: 901914
 
