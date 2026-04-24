@@ -29,10 +29,10 @@ bodyW = do
   progressBar
   heroSection
   rsvpOpenE <- rsvpSection
-  videoOpenE <- videoMsgSection
   ubicacionSection
   dressCodeSection
   mesaRegalosSection
+  videoOpenE <- videoMsgSection
   fixedNav
   backToTop
   underConstructionOverlay (leftmost [rsvpOpenE, videoOpenE])
@@ -123,10 +123,10 @@ fixedNav =
     navItems :: [(Text, Text)]
     navItems =
       [ ("#rsvp",          "RSVP")
-      , ("#video-mensaje", "VIDEO")
       , ("#ubicacion",     "UBICACI\211N")
       , ("#dress-code",    "DRESS CODE")
       , ("#mesa-regalos",  "REGALOS")
+      , ("#video-mensaje", "VIDEO")
       ]
 
 -- ── UBICACIÓN ────────────────────────────────────────────────────────────────
@@ -381,7 +381,6 @@ videoMsgSection =
         text "VIDEO PARA LOS NOVIOS"
       elAttr "div" ("class" =: "video-mask" <> "data-reveal" =: "") $
         elAttr "div" ("class" =: "glass rect video-card") $ do
-          elAttr "span" ("class" =: "video-msg-icon") $ text "\127916"
           elAttr "p" ("class" =: "video-msg-text") $
             text "M\225ndale un video corto a los novios."
           (btnEl, _) <- elAttr' "button"
@@ -819,7 +818,8 @@ siteCSS = T.unlines
   , "  padding: 2.2rem 1.8rem 0;"
   , "  z-index: 2;"
   , "}"
-  , ".dress-info { margin: 1.1rem auto; text-align: center; }"
+  , ".dress-info { margin: 1.1rem auto; text-align: center; width: min(84vw, calc(var(--photo-frame-width) - 2rem)); }"
+  , ".dress-info p + p { white-space: nowrap; }"
   , ""
 
   -- ── RSVP button (shared by all action buttons) ────────────────────────────
