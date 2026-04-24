@@ -481,6 +481,18 @@ siteCSS = T.unlines
   , "  .section-img   { height: max(600px, 100svh); }"
   , "  .section-overlay { padding-top: .6rem; }"
   , "}"
+  , "@media (orientation: portrait) and (max-width: 760px) {"
+  , "  .section.image-section { overflow: hidden; }"
+  , "  .image-section .section-img { width: min(100vw, 390px); height: auto; }"
+  , "  #hero .hero-bg {"
+  , "    background-size: min(100vw, 390px) auto;"
+  , "    background-position: center center;"
+  , "  }"
+  , "}"
+  , "@media (orientation: portrait) and (max-width: 760px) and (max-height: 600px) {"
+  , "  .image-section .section-img { width: min(100vw, 390px); }"
+  , "  #hero .hero-bg { background-size: min(100vw, 390px) auto; }"
+  , "}"
   , ""
 
   -- ── Section shell ─────────────────────────────────────────────────────────
@@ -683,7 +695,7 @@ siteCSS = T.unlines
   , "  from { opacity: 0; transform: translateY(20px); }"
   , "  to   { opacity: 1; transform: translateY(0); }"
   , "}"
-  , "@media (max-width: 760px) {"
+  , "@media (orientation: landscape) and (max-width: 760px) {"
   , "  .hero-bg { background-size: auto 100%; }"
   , "}"
   , ""
@@ -1073,6 +1085,7 @@ siteCSS = T.unlines
 
   -- ── Video mensaje ─────────────────────────────────────────────────────────
   , ".video-mask { overflow: hidden; }"
+  , "#video-mensaje .section-overlay { padding-bottom: calc(var(--card-bottom-gap) * 1.1); }"
   , ".video-card { text-align: center; margin-left: auto; margin-right: auto; }"
   , ".video-msg-icon {"
   , "  display: block;"

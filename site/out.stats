@@ -9,7 +9,7 @@ array-0.5.4.0-BY9BworFlmHJapi9znoqNH:15
 assoc-1.0.2-9r5CYDItYfw2716RlsM2q0:2
 attoparsec-0.14.4-B2iQnzVBBFTKhcVPsQN0rt-attoparsec-internal:6
 attoparsec-0.14.4-I8c7AMvf6rV5ZJN2QPl657:16
-base:                    1690566
+base:                    1690568
 base-compat-0.11.2-JQpKDsVhHsCHPlgorbNGMx:118
 base-compat-batteries-0.11.2-Ga31QQ7sOlIgAVr2fMCMg:118
 base-orphans-0.8.7-68gGt71vpOZ5uwbcNbxwhZ:2
@@ -43,7 +43,7 @@ exceptions-0.10.5-BqyE5VZGB6MJU8pEcckH3M:2
 free-5.1.9-BT0DrMPCj7zEwehq6rjGJZ:20
 generically-0.1-35Te45UlhoWD8zU0TKv2Uc:1
 ghc-boot-th-8.10.7-FQtGTtjFMOPJdcMgIgVdDb:9253
-ghc-prim:                144723
+ghc-prim:                145346
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf:8091
 ghcjs-dom-0.9.4.0-7D07xJnME4h8365CyighbD:4824
 ghcjs-dom-jsffi-0.9.4.0-47s8EUYI9ptHH2NrIQGHdX:452038
@@ -104,7 +104,7 @@ unordered-containers-0.2.17.0-AFrF27z0nr9EWVUGMShZGS:8
 uuid-types-1.0.5-3IW8DmCgl8oIpz1iDmHBqE:3
 vector-0.12.3.1-Jn822ltAQMG9EAuGGatnyM:21
 witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6:2
-zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:1821767
+zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:1824353
 
 
 code size per module:
@@ -298,7 +298,7 @@ base
     Data.Type.Bool:                     321
     Data.Type.Coercion:                 275
     Data.Type.Equality:                 1
-    Data.Typeable:                      361199
+    Data.Typeable:                      361200
     Data.Typeable.Internal:             1
     Data.Unique:                        1
     Data.Version:                       1
@@ -369,7 +369,7 @@ base
     GHC.IO.Encoding.Types:              1
     GHC.IO.Encoding.UTF16:              1
     GHC.IO.Encoding.UTF32:              225910
-    GHC.IO.Encoding.UTF8:               74125
+    GHC.IO.Encoding.UTF8:               74126
     GHC.IO.Exception:                   110600
     GHC.IO.FD:                          1208
     GHC.IO.Handle:                      26902
@@ -951,7 +951,7 @@ ghc-prim
     GHC.Prim.Ext:                       221
     GHC.PrimopWrappers:                 9423
     GHC.Tuple:                          7208
-    GHC.Types:                          90894
+    GHC.Types:                          91517
 
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf
     Data.JSString:                      1
@@ -2386,9 +2386,9 @@ witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6
     Witherable:                         1
 
 zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd
-    Text.Encoding.Z:                    1821767
+    Text.Encoding.Z:                    1824353
 
 
 
-packed metadata: 902446
+packed metadata: 903860
 
