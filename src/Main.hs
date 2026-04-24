@@ -382,7 +382,7 @@ videoMsgSection =
       elAttr "div" ("class" =: "video-mask" <> "data-reveal" =: "") $
         elAttr "div" ("class" =: "glass rect video-card") $ do
           elAttr "p" ("class" =: "video-msg-text") $
-            text "M\225ndale un video corto a los novios."
+            text "M\225ndale un video corto a los novios"
           (btnEl, _) <- elAttr' "button"
             ( "class" =: "rsvp-btn video-wa-btn"
            <> "type"  =: "button"
@@ -689,8 +689,8 @@ siteCSS = T.unlines
   , "  display: flex;"
   , "  justify-content: center;"
   , "  flex-wrap: wrap;"
-  , "  gap: .35rem .85rem;"
-  , "  padding: .6rem 1.2rem .7rem;"
+  , "  gap: .35rem clamp(.85rem, 1.96vw, 1.7rem);"
+  , "  padding: clamp(.6rem, 1.38vw, 1.2rem) clamp(1.2rem, 2.76vw, 2.4rem) clamp(.7rem, 1.61vw, 1.4rem);"
   , "  background: rgba(20,13,7,.74);"
   , "  backdrop-filter: blur(24px) saturate(1.2);"
   , "  -webkit-backdrop-filter: blur(24px) saturate(1.2);"
@@ -704,7 +704,7 @@ siteCSS = T.unlines
   , ".fixed-nav-link {"
   , "  color: rgba(255,255,255,.65);"
   , "  text-decoration: none;"
-  , "  font-size: .57rem;"
+  , "  font-size: clamp(.57rem, 1.31vw, 1.14rem);"
   , "  letter-spacing: .22em;"
   , "  text-transform: uppercase;"
   , "  padding: .22rem 0 .18rem;"
