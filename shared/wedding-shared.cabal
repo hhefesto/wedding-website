@@ -1,0 +1,17 @@
+cabal-version: 2.4
+name:          wedding-shared
+version:       0.1.0
+build-type:    Simple
+synopsis:      Wire types shared between wedding-frontend and wedding-backend.
+
+library
+  exposed-modules:    Wedding.Types
+  hs-source-dirs:     src
+  build-depends:
+      base   >= 4.12 && < 5
+    , aeson
+    , text
+  default-language:   Haskell2010
+  default-extensions:
+      OverloadedStrings
+      DeriveGeneric

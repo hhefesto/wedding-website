@@ -5,11 +5,12 @@ module Main where
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
-import qualified Data.ByteString as BS
-import Data.Word (Word8)
+import qualified Data.ByteString.Lazy as BL
+import Data.Aeson (encode)
 import Control.Monad (forM_, void)
 import Language.Javascript.JSaddle (eval, MonadJSM, liftJSM)
 import Reflex.Dom
+import Wedding.Types (Rsvp (..))
 
 -- ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -35,7 +36,8 @@ bodyW = do
   videoOpenE <- videoMsgSection
   fixedNav
   backToTop
-  underConstructionOverlay (leftmost [rsvpOpenE, videoOpenE])
+  rsvpOverlay rsvpOpenE
+  underConstructionOverlay videoOpenE
   pb <- getPostBuild
   performEvent_ $ liftJSM (void $ eval navHighlightingJS) <$ pb
 
@@ -258,21 +260,44 @@ rsvpOverlay openE = mdo
           (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Continuar \8594"
           return (_inputElement_value ti, domEvent Click nb)
 
-        -- Step 4: summary + WhatsApp link (no next button)
-        rsvpStep_ stepDyn 4 $ do
+        -- Step 4: summary + POST submission
+        rsvpStep_ stepDyn 4 $ mdo
           elAttr "p" ("class" =: "rsvp-step-label") $ text "\161Todo listo!"
           let summaryDyn = summaryRows <$> nameD' <*> guestD' <*> dietaryD'
           elAttr "div" ("class" =: "rsvp-summary") $
             dyn_ $ ffor summaryDyn $ \rows ->
               forM_ rows $ \row -> el "p" $ text row
-          let hrefDyn = buildWaHref <$> nameD' <*> guestD' <*> dietaryD'
-          elDynAttr "a"
-            ( ffor hrefDyn $ \h ->
-                "class"  =: "rsvp-btn rsvp-whatsapp-btn"
-             <> "href"   =: h
-             <> "target" =: "_blank"
-             <> "rel"    =: "noopener noreferrer"
-            ) $ text "Enviar por WhatsApp \8594"
+
+          let rsvpDyn = Rsvp <$> nameD' <*> guestD' <*> dietaryD'
+              reqDyn  = ffor rsvpDyn $ \r ->
+                XhrRequest "POST" "/api/rsvp" $ def
+                  & xhrRequestConfig_headers     .~ ("Content-Type" =: "application/json")
+                  & xhrRequestConfig_sendData    .~ TE.decodeUtf8 (BL.toStrict (encode r))
+
+          (sendBtnEl, _) <- elDynAttr' "button"
+            ( ffor statusDyn $ \s ->
+                "class" =: "rsvp-btn rsvp-send-btn"
+             <> "type"  =: "button"
+             <> (if s == StatusSending || s == StatusSuccess
+                   then "disabled" =: "disabled" else mempty)
+            ) $ dynText (statusBtnLabel <$> statusDyn)
+          let sendE = domEvent Click sendBtnEl
+
+          respE <- performRequestAsync (current reqDyn `tag` sendE)
+          let resultE = ffor respE $ \resp ->
+                case _xhrResponse_status resp of
+                  s | s == 200 || s == 204 -> StatusSuccess
+                  _                        -> StatusError
+          statusDyn <- holdDyn StatusIdle $ leftmost
+            [ StatusSending <$ sendE
+            , resultE
+            ]
+
+          elDynAttr "p"
+            ( ffor statusDyn $ \s ->
+                "class" =: "rsvp-status"
+             <> if statusVisible s then mempty else "style" =: "display:none"
+            ) $ dynText (statusMsg <$> statusDyn)
 
         return (n1E', n2E', n3E', nameD', guestD', dietaryD')
 
@@ -303,32 +328,28 @@ summaryRows name guests dietary =
   , "Asistentes: " <> T.pack (show guests)
   ] ++ [ "Restricciones: " <> dietary | not (T.null dietary) ]
 
--- Build the wa.me href with percent-encoded message.
-buildWaHref :: Text -> Int -> Text -> Text
-buildWaHref name guests dietary =
-  "https://wa.me/PLACEHOLDER?text=" <> percentEncode msg
-  where
-    msg = T.intercalate "\n" $
-      [ "\xa1Hola! Confirmo mi asistencia a la boda de Daniel y Ana Cristina \127881"
-      , "Nombre: "     <> if T.null name then "\8212" else name
-      , "Asistentes: " <> T.pack (show guests)
-      ] ++ [ "Restricciones: " <> dietary | not (T.null dietary) ]
+-- ── RSVP submission status ────────────────────────────────────────────────────
 
--- RFC-3986 percent-encoding (UTF-8 bytes, unreserved chars pass through).
-percentEncode :: Text -> Text
-percentEncode = T.pack . concatMap encByte . BS.unpack . TE.encodeUtf8
-  where
-    encByte :: Word8 -> String
-    encByte b
-      | (b >= 65 && b <= 90)   -- A-Z
-        || (b >= 97 && b <= 122)  -- a-z
-        || (b >= 48 && b <= 57)   -- 0-9
-        || b == 45 || b == 95 || b == 46 || b == 126  -- - _ . ~
-        = [toEnum (fromIntegral b)]
-      | otherwise = '%' : [hexDig (b `div` 16), hexDig (b `mod` 16)]
-    hexDig d = if d < 10
-               then toEnum (fromIntegral d + 48)   -- '0'
-               else toEnum (fromIntegral d - 10 + 65)  -- 'A'
+data RsvpStatus = StatusIdle | StatusSending | StatusSuccess | StatusError
+  deriving (Eq)
+
+statusBtnLabel :: RsvpStatus -> Text
+statusBtnLabel s = case s of
+  StatusIdle    -> "Enviar confirmaci\243n \8594"
+  StatusSending -> "Enviando\8230"
+  StatusSuccess -> "\161Enviado!"
+  StatusError   -> "Reintentar"
+
+statusVisible :: RsvpStatus -> Bool
+statusVisible StatusIdle = False
+statusVisible _          = True
+
+statusMsg :: RsvpStatus -> Text
+statusMsg s = case s of
+  StatusIdle    -> ""
+  StatusSending -> "Enviando confirmaci\243n\8230"
+  StatusSuccess -> "\161Confirmaci\243n recibida! Gracias \127881"
+  StatusError   -> "Hubo un problema al enviar. Int\233ntalo de nuevo."
 
 -- ── MESA DE REGALOS ──────────────────────────────────────────────────────────
 

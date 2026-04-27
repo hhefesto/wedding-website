@@ -1,0 +1,40 @@
+cabal-version: 2.4
+name:          wedding-backend
+version:       0.1.0
+build-type:    Simple
+synopsis:      Servant + postgresql-simple backend for the wedding RSVP form.
+
+library
+  exposed-modules:
+      Api
+      Db
+  hs-source-dirs:     src
+  build-depends:
+      base                >= 4.12 && < 5
+    , aeson
+    , bytestring
+    , postgresql-simple
+    , servant
+    , servant-server
+    , text
+    , time
+    , uuid
+    , wai
+    , warp
+    , wedding-shared
+  default-language:   Haskell2010
+  default-extensions:
+      OverloadedStrings
+      DataKinds
+      TypeOperators
+      DeriveGeneric
+      ScopedTypeVariables
+
+executable wedding-backend
+  main-is:            Main.hs
+  hs-source-dirs:     app
+  build-depends:
+      base
+    , wedding-backend
+    , warp
+  default-language:   Haskell2010

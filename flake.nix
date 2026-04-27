@@ -22,6 +22,18 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [ "x86_64-linux" "aarch64-linux" ];
 
+      flake.nixosModules = {
+        database = ./nixosModules/database.nix;
+        backend  = ./nixosModules/backend.nix;
+        frontend = ./nixosModules/frontend.nix;
+        wedding  = import ./nixosModules/wedding.nix;
+        default  = { imports = [
+          ./nixosModules/database.nix
+          ./nixosModules/backend.nix
+          ./nixosModules/frontend.nix
+        ]; };
+      };
+
       perSystem = { self', system, ... }:
       let
         pkgs = import inputs.nixpkgs { inherit system; };
@@ -29,13 +41,23 @@
         # Import reflex-platform for its GHCJS package set
         rp = import inputs.reflex-platform { inherit system; };
 
+        # Native GHC build for the backend.  Extends nixpkgs.haskellPackages
+        # with the local wedding-shared and wedding-backend packages via
+        # callCabal2nix.  Stays separate from reflex-platform's GHCJS set.
+        hpkgs = pkgs.haskellPackages.extend (self: super: {
+          wedding-shared  = self.callCabal2nix "wedding-shared"  ./shared  {};
+          wedding-backend = self.callCabal2nix "wedding-backend" ./backend {};
+        });
+        weddingBackend = pkgs.haskell.lib.justStaticExecutables hpkgs.wedding-backend;
+
         project = rp.project ({ ... }: {
           packages = {
-            wedding-frontend = ./.;
+            wedding-frontend = ./frontend;
+            wedding-shared   = ./shared;
           };
           shells = {
-            ghc   = [ "wedding-frontend" ];
-            ghcjs = [ "wedding-frontend" ];
+            ghc   = [ "wedding-frontend" "wedding-shared" ];
+            ghcjs = [ "wedding-frontend" "wedding-shared" ];
           };
         });
 
@@ -84,8 +106,9 @@
         '';
       in {
         # ── Packages ────────────────────────────────────────────────────────
-        packages.website = website;
-        packages.default = website;
+        packages.website         = website;
+        packages.wedding-backend = weddingBackend;
+        packages.default         = website;
 
         # ── Dev shell (GHC + cabal, jsaddle-warp browser preview) ──────────
         devShells.default = project.shells.ghc;
