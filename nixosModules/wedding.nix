@@ -21,6 +21,11 @@
 , databaseName ? "wedding"    # DB name and owning role on the shared cluster
 , serverName   ? "_"
 , openFirewall ? true
+, adminPasswordHashFile ? null
+, videoDir ? "/var/lib/wedding/videos"
+, videoMaxBytes ? 200 * 1024 * 1024
+, cookieSecure ? false
+, uploadMaxBodySize ? "200m"
 }:
 { config, lib, pkgs, ... }:
 {
@@ -38,9 +43,13 @@
   };
 
   services.wedding.backend = {
-    enable  = true;
-    port    = ports.backend;
+    enable = true;
+    port = ports.backend;
     package = packages.backend;
+    adminPasswordHashFile = adminPasswordHashFile;
+    videoDir = videoDir;
+    videoMaxBytes = videoMaxBytes;
+    cookieSecure = cookieSecure;
   };
 
   services.wedding.frontend = {
@@ -48,6 +57,7 @@
     port       = ports.nginx;
     serverName = serverName;
     staticRoot = packages.staticRoot;
+    uploadMaxBodySize = uploadMaxBodySize;
   };
 
   networking.firewall.allowedTCPPorts = lib.mkIf openFirewall [ ports.nginx ];

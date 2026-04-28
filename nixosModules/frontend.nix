@@ -23,6 +23,12 @@ in {
       type        = lib.types.path;
       description = "Path to the GHCJS-built wedding website static directory.";
     };
+
+    uploadMaxBodySize = lib.mkOption {
+      type        = lib.types.str;
+      default     = "200m";
+      description = "nginx client_max_body_size for wedding API uploads.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -50,6 +56,9 @@ in {
           "/api/" = {
             proxyPass = "http://127.0.0.1:${toString backendCfg.port}";
             extraConfig = ''
+              client_max_body_size ${cfg.uploadMaxBodySize};
+              proxy_request_buffering off;
+              proxy_read_timeout 600s;
               proxy_set_header Host $host;
               proxy_set_header X-Real-IP $remote_addr;
               proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -7,14 +7,20 @@ synopsis:      Servant + postgresql-simple backend for the wedding RSVP form.
 library
   exposed-modules:
       Api
+      Auth
       Db
+      Upload
   hs-source-dirs:     src
   build-depends:
       base                >= 4.12 && < 5
     , aeson
+    , bcrypt
     , bytestring
+    , directory
+    , filepath
     , postgresql-simple
     , servant
+    , servant-multipart
     , servant-server
     , text
     , time
