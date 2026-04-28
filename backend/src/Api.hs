@@ -12,6 +12,7 @@ import           Control.Concurrent.MVar    (MVar, withMVar)
 import           Control.Exception          (SomeException, try)
 import           Control.Monad.IO.Class     (liftIO)
 import           Data.ByteString            (ByteString)
+import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as LBC8
 import           Data.Int                   (Int64)
 import           Data.Text                  (Text)
@@ -20,6 +21,8 @@ import           Database.PostgreSQL.Simple (Connection)
 import           Network.Wai                (Application)
 import           Servant
 import           Servant.Multipart          (MultipartData, MultipartForm, Tmp)
+import           System.Directory           (doesFileExist)
+import           System.FilePath            ((</>))
 import           System.IO                  (hPutStrLn, stderr)
 
 import           Auth                       (generateToken, verifyPassword)
@@ -28,7 +31,7 @@ import           Upload                     (saveVideoUpload)
 import           Wedding.Types              (Invitee, InviteeInput,
                                              LinkInviteeBody, LoginRequest (..),
                                              RsvpAdmin, RsvpRequest,
-                                             VideoAdmin,
+                                             VideoAdmin (..),
                                              VideoSubmittedResponse (..))
 
 data AppConfig = AppConfig
@@ -41,6 +44,7 @@ data AppConfig = AppConfig
 type ConnVar = MVar Connection
 type CookieHeader = Header "Cookie" Text
 type SetCookie a = Headers '[Header "Set-Cookie" Text] a
+type DownloadFile = Headers '[Header "Content-Disposition" Text] BL.ByteString
 
 type API =
        "api" :> "health" :> Get '[PlainText] String
@@ -56,6 +60,7 @@ type API =
   :<|> "api" :> "admin" :> "rsvps" :> CookieHeader :> Get '[JSON] [RsvpAdmin]
   :<|> "api" :> "admin" :> "rsvps" :> Capture "id" Text :> "invitee" :> CookieHeader :> ReqBody '[JSON] LinkInviteeBody :> Put '[JSON] RsvpAdmin
   :<|> "api" :> "admin" :> "videos" :> CookieHeader :> Get '[JSON] [VideoAdmin]
+  :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> "download" :> CookieHeader :> Get '[OctetStream] DownloadFile
 
 api :: Proxy API
 api = Proxy
@@ -75,6 +80,7 @@ server cfg var =
   :<|> listRsvpsH var
   :<|> linkRsvpInviteeH var
   :<|> listVideosH var
+  :<|> downloadVideoH cfg var
 
 healthH :: Handler String
 healthH = pure "ok"
@@ -152,6 +158,19 @@ listVideosH var mCookie = do
   requireAdmin var mCookie
   withDb var Db.listVideos
 
+downloadVideoH :: AppConfig -> ConnVar -> Text -> Maybe Text -> Handler DownloadFile
+downloadVideoH cfg var vid mCookie = do
+  requireAdmin var mCookie
+  mVideo <- withDb var (`Db.getVideo` vid)
+  video <- maybe (throwError err404) pure mVideo
+  let path = appVideoDir cfg </> T.unpack (vaStoredFilename video)
+  exists <- liftIO (doesFileExist path)
+  if not exists
+    then throwError err404
+    else do
+      bytes <- liftIO (BL.readFile path)
+      pure (addHeader (downloadDisposition (vaOriginalFilename video)) bytes)
+
 withDb :: ConnVar -> (Connection -> IO a) -> Handler a
 withDb var action = do
   result <- liftIO $ try $ withMVar var action
@@ -194,6 +213,14 @@ cookieName = "wedding_admin"
 
 textBody :: Text -> LBC8.ByteString
 textBody = LBC8.pack . T.unpack
+
+downloadDisposition :: Text -> Text
+downloadDisposition filename = "attachment; filename=\"" <> T.map safeDispositionChar filename <> "\""
+
+safeDispositionChar :: Char -> Char
+safeDispositionChar c
+  | c == '"' || c == '\\' || c == '\r' || c == '\n' = '_'
+  | otherwise = c
 
 nonEmpty :: Text -> Maybe Text
 nonEmpty value =

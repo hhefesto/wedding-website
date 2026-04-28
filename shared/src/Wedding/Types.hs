@@ -67,6 +67,16 @@ instance ToJSON Invitee where
     , "createdAt" .= inviteeCreatedAt i
     ]
 
+instance FromJSON Invitee where
+  parseJSON = withObject "Invitee" $ \o ->
+    Invitee
+      <$> o .:  "id"
+      <*> o .:  "name"
+      <*> o .:? "code"
+      <*> o .:  "maxGuests"
+      <*> o .:? "notes"
+      <*> o .:  "createdAt"
+
 data InviteeInput = InviteeInput
   { iiName      :: Text
   , iiCode      :: Maybe Text
@@ -97,6 +107,9 @@ newtype LoginRequest = LoginRequest
 instance FromJSON LoginRequest where
   parseJSON = withObject "LoginRequest" $ \o -> LoginRequest <$> o .: "password"
 
+instance ToJSON LoginRequest where
+  toJSON r = object ["password" .= loginPassword r]
+
 data RsvpAdmin = RsvpAdmin
   { raId                 :: Text
   , raName               :: Text
@@ -118,12 +131,26 @@ instance ToJSON RsvpAdmin where
     , "createdAt"          .= raCreatedAt r
     ]
 
+instance FromJSON RsvpAdmin where
+  parseJSON = withObject "RsvpAdmin" $ \o ->
+    RsvpAdmin
+      <$> o .:  "id"
+      <*> o .:  "name"
+      <*> o .:  "guestCount"
+      <*> o .:? "dietary"
+      <*> o .:? "inviteeId"
+      <*> o .:? "invitationCodeUsed"
+      <*> o .:  "createdAt"
+
 newtype LinkInviteeBody = LinkInviteeBody
   { linkInviteeId :: Maybe Int64
   } deriving (Eq, Show, Generic)
 
 instance FromJSON LinkInviteeBody where
   parseJSON = withObject "LinkInviteeBody" $ \o -> LinkInviteeBody <$> o .:? "inviteeId"
+
+instance ToJSON LinkInviteeBody where
+  toJSON body = object ["inviteeId" .= linkInviteeId body]
 
 data VideoAdmin = VideoAdmin
   { vaId               :: Text
@@ -148,9 +175,24 @@ instance ToJSON VideoAdmin where
     , "createdAt"        .= vaCreatedAt v
     ]
 
+instance FromJSON VideoAdmin where
+  parseJSON = withObject "VideoAdmin" $ \o ->
+    VideoAdmin
+      <$> o .:  "id"
+      <*> o .:  "originalFilename"
+      <*> o .:  "storedFilename"
+      <*> o .:  "contentType"
+      <*> o .:  "sizeBytes"
+      <*> o .:? "submitterName"
+      <*> o .:? "message"
+      <*> o .:  "createdAt"
+
 newtype VideoSubmittedResponse = VideoSubmittedResponse
   { videoId :: Text
   } deriving (Eq, Show, Generic)
 
 instance ToJSON VideoSubmittedResponse where
   toJSON v = object ["id" .= videoId v]
+
+instance FromJSON VideoSubmittedResponse where
+  parseJSON = withObject "VideoSubmittedResponse" $ \o -> VideoSubmittedResponse <$> o .: "id"

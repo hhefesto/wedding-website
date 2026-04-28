@@ -14,6 +14,7 @@ module Db
   , linkRsvpInvitee
   , insertVideo
   , listVideos
+  , getVideo
   ) where
 
 import           Control.Monad              (void)
@@ -156,6 +157,15 @@ insertVideo conn video = do
 listVideos :: Connection -> IO [VideoAdmin]
 listVideos conn = query_ conn
   "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, submitter_name, message, created_at::text FROM videos ORDER BY created_at DESC"
+
+getVideo :: Connection -> Text -> IO (Maybe VideoAdmin)
+getVideo conn vid = do
+  rows <- query conn
+    "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, submitter_name, message, created_at::text FROM videos WHERE id = ?::uuid"
+    (Only vid)
+  pure $ case rows of
+    []    -> Nothing
+    (v:_) -> Just v
 
 inviteeSelectByCode :: Query
 inviteeSelectByCode =

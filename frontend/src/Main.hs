@@ -26,20 +26,25 @@ headW = do
 
 bodyW :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 bodyW = do
-  introOverlay
-  progressBar
-  heroSection
-  rsvpOpenE <- rsvpSection
-  ubicacionSection
-  dressCodeSection
-  mesaRegalosSection
-  videoOpenE <- videoMsgSection
-  fixedNav
-  backToTop
-  rsvpOverlay rsvpOpenE
-  underConstructionOverlay videoOpenE
+  videoOpenE <- elAttr "div" ("class" =: "site-shell") $ do
+    introOverlay
+    progressBar
+    heroSection
+    rsvpOpenE <- rsvpSection
+    ubicacionSection
+    dressCodeSection
+    mesaRegalosSection
+    videoOpenE' <- videoMsgSection
+    fixedNav
+    backToTop
+    rsvpOverlay rsvpOpenE
+    pure videoOpenE'
+  adminRoot
+  videoUploadOverlay videoOpenE
   pb <- getPostBuild
   performEvent_ $ liftJSM (void $ eval navHighlightingJS) <$ pb
+  performEvent_ $ liftJSM (void $ eval adminAppJS) <$ pb
+  performEvent_ $ liftJSM (void $ eval videoUploadJS) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -107,6 +112,53 @@ navHighlightingJS =
   <> "},{rootMargin:'-40% 0px -40% 0px',threshold:0});"
   <> "document.querySelectorAll('.image-section').forEach(function(s){obs.observe(s);});"
   <> "})()"
+
+adminAppJS :: String
+adminAppJS = unlines
+  [ "(function(){"
+  , "if(window.__weddingAdminReady){return;}"
+  , "window.__weddingAdminReady=true;"
+  , "var root=document.getElementById('admin-root');"
+  , "if(!root){return;}"
+  , "var state={tab:'invitees',invitees:[],rsvps:[],videos:[]};"
+  , "function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
+  , "function date(v){return esc(String(v||'').replace('T',' ').slice(0,19));}"
+  , "function api(path,opt){opt=opt||{};opt.credentials='same-origin';return fetch(path,opt);}"
+  , "function jsonApi(path,opt){return api(path,opt).then(function(r){if(!r.ok){throw new Error(String(r.status));} return r.json();});}"
+  , "function isAdmin(){return window.location.hash==='#admin' || window.location.hash==='#/admin';}"
+  , "function syncRoute(){document.body.classList.toggle('admin-mode',isAdmin()); if(isAdmin()){checkSession();}}"
+  , "window.addEventListener('hashchange',syncRoute);"
+  , "function checkSession(){api('/api/admin/me').then(function(r){if(r.ok){renderShell(); loadAll();}else{renderLogin('');}}).catch(function(){renderLogin('');});}"
+  , "function renderLogin(msg){root.innerHTML='<main class=\"admin-page\"><section class=\"admin-login\"><p class=\"admin-kicker\">ADMIN</p><h1>Wedding dashboard</h1><p class=\"admin-muted\">Enter the admin password to manage invitees, RSVPs, and videos.</p><form id=\"admin-login-form\"><input id=\"admin-password\" class=\"admin-input\" type=\"password\" placeholder=\"Password\" autocomplete=\"current-password\" autofocus><button class=\"admin-btn\" type=\"submit\">Enter</button><p class=\"admin-error\">'+esc(msg)+'</p></form></section></main>';"
+  , "document.getElementById('admin-login-form').addEventListener('submit',function(e){e.preventDefault();var p=document.getElementById('admin-password').value;api('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p})}).then(function(r){if(!r.ok){throw new Error('bad');}renderShell();loadAll();}).catch(function(){renderLogin('Invalid password.');});});}"
+  , "function renderShell(){root.innerHTML='<main class=\"admin-page\"><header class=\"admin-top\"><div><p class=\"admin-kicker\">ADMIN</p><h1>Wedding dashboard</h1></div><div class=\"admin-actions\"><a class=\"admin-link\" href=\"#hero\">Public site</a><button id=\"admin-logout\" class=\"admin-btn ghost\" type=\"button\">Log out</button></div></header><nav class=\"admin-tabs\"><button data-tab=\"invitees\">Invitees</button><button data-tab=\"rsvps\">RSVPs</button><button data-tab=\"videos\">Videos</button></nav><section id=\"admin-panel\" class=\"admin-panel\"></section></main>';"
+  , "document.getElementById('admin-logout').addEventListener('click',function(){api('/api/admin/logout',{method:'POST'}).finally(function(){renderLogin('');});});"
+  , "root.querySelectorAll('[data-tab]').forEach(function(b){b.addEventListener('click',function(){state.tab=b.getAttribute('data-tab');renderPanel();});});renderPanel();}"
+  , "function loadAll(){Promise.all([jsonApi('/api/admin/invitees'),jsonApi('/api/admin/rsvps'),jsonApi('/api/admin/videos')]).then(function(xs){state.invitees=xs[0];state.rsvps=xs[1];state.videos=xs[2];renderPanel();}).catch(function(){renderLogin('Session expired.');});}"
+  , "function setTabs(){root.querySelectorAll('[data-tab]').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-tab')===state.tab);});}"
+  , "function renderPanel(){var panel=document.getElementById('admin-panel');if(!panel){return;}setTabs();if(state.tab==='invitees'){renderInvitees(panel);}else if(state.tab==='rsvps'){renderRsvps(panel);}else{renderVideos(panel);}}"
+  , "function renderInvitees(panel){panel.innerHTML='<div class=\"admin-grid\"><form id=\"invitee-form\" class=\"admin-card admin-form\"><h2>Add invitee</h2><input class=\"admin-input\" name=\"name\" placeholder=\"Name\" required><input class=\"admin-input\" name=\"code\" placeholder=\"Invitation code (optional)\"><input class=\"admin-input\" name=\"maxGuests\" type=\"number\" min=\"1\" max=\"20\" value=\"1\"><textarea class=\"admin-input\" name=\"notes\" placeholder=\"Notes\"></textarea><button class=\"admin-btn\" type=\"submit\">Add invitee</button></form><div class=\"admin-card\"><h2>Invitees ('+state.invitees.length+')</h2><div class=\"admin-list\">'+state.invitees.map(function(i){return '<article class=\"admin-row\"><div><strong>'+esc(i.name)+'</strong><p>'+esc(i.code||'no code')+' · max '+esc(i.maxGuests)+' guests</p><p>'+esc(i.notes||'')+'</p></div><button class=\"admin-danger\" data-delete=\"'+esc(i.id)+'\">Delete</button></article>';}).join('')+'</div></div></div>';"
+  , "document.getElementById('invitee-form').addEventListener('submit',function(e){e.preventDefault();var f=e.currentTarget;var body={name:f.name.value,code:f.code.value||null,maxGuests:parseInt(f.maxGuests.value||'1',10),notes:f.notes.value||null};api('/api/admin/invitees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){if(!r.ok){throw new Error('bad');}return r.json();}).then(function(i){state.invitees.unshift(i);renderPanel();}).catch(function(){alert('Could not create invitee.');});});"
+  , "panel.querySelectorAll('[data-delete]').forEach(function(b){b.addEventListener('click',function(){if(!confirm('Delete invitee?')){return;}var id=b.getAttribute('data-delete');api('/api/admin/invitees/'+encodeURIComponent(id),{method:'DELETE'}).then(function(r){if(!r.ok){throw new Error('bad');}state.invitees=state.invitees.filter(function(i){return String(i.id)!==String(id);});renderPanel();}).catch(function(){alert('Could not delete invitee.');});});});}"
+  , "function renderRsvps(panel){panel.innerHTML='<div class=\"admin-card\"><h2>RSVPs ('+state.rsvps.length+')</h2><div class=\"admin-list\">'+state.rsvps.map(function(r){return '<article class=\"admin-row\"><div><strong>'+esc(r.name)+'</strong><p>'+esc(r.guestCount)+' guests · '+date(r.createdAt)+'</p><p>Invitee: '+esc(r.inviteeId||'unmatched')+' · Code: '+esc(r.invitationCodeUsed||'none')+'</p><p>'+esc(r.dietary||'')+'</p></div></article>';}).join('')+'</div></div>'; }"
+  , "function renderVideos(panel){panel.innerHTML='<div class=\"admin-card\"><h2>Videos ('+state.videos.length+')</h2><div class=\"admin-list\">'+state.videos.map(function(v){return '<article class=\"admin-row\"><div><strong>'+esc(v.originalFilename)+'</strong><p>'+esc(v.contentType)+' · '+Math.round((v.sizeBytes||0)/1048576*10)/10+' MB · '+date(v.createdAt)+'</p><p>'+esc(v.submitterName||'anonymous')+' '+esc(v.message||'')+'</p></div><a class=\"admin-btn small\" href=\"/api/admin/videos/'+encodeURIComponent(v.id)+'/download\">Download</a></article>';}).join('')+'</div></div>'; }"
+  , "syncRoute();"
+  , "})()"
+  ]
+
+videoUploadJS :: String
+videoUploadJS = unlines
+  [ "(function(){"
+  , "if(window.__weddingVideoUploadReady){return;}"
+  , "window.__weddingVideoUploadReady=true;"
+  , "var form=document.getElementById('video-upload-form');"
+  , "if(!form){return;}"
+  , "var status=document.getElementById('video-upload-status');"
+  , "var submit=document.getElementById('video-upload-submit');"
+  , "function setStatus(msg,bad){status.textContent=msg||'';status.classList.toggle('is-error',!!bad);}"
+  , "form.addEventListener('submit',function(e){e.preventDefault();var file=document.getElementById('video-upload-file').files[0];if(!file){setStatus('Choose a video first.',true);return;}var fd=new FormData();fd.append('name',document.getElementById('video-upload-name').value||'');fd.append('message',document.getElementById('video-upload-message').value||'');fd.append('video',file,file.name);submit.disabled=true;setStatus('Uploading... this can take a moment.',false);fetch('/api/videos',{method:'POST',body:fd}).then(function(r){if(!r.ok){throw new Error(String(r.status));}return r.json();}).then(function(){form.reset();setStatus('Video uploaded. Thank you!',false);}).catch(function(){setStatus('Upload failed. Try again with a smaller video.',true);}).finally(function(){submit.disabled=false;});});"
+  , "})()"
+  ]
 
 fixedNav :: DomBuilder t m => m ()
 fixedNav =
@@ -407,8 +459,62 @@ videoMsgSection =
           (btnEl, _) <- elAttr' "button"
             ( "class" =: "rsvp-btn video-wa-btn"
            <> "type"  =: "button"
+           <> "id"    =: "video-upload-open"
             ) $ text "Subir video"
           return (domEvent Click btnEl)
+
+-- ── Video upload popup ───────────────────────────────────────────────────────
+
+videoUploadOverlay :: MonadWidget t m => Event t () -> m ()
+videoUploadOverlay openE = mdo
+  visibleDyn <- holdDyn False $ leftmost [True <$ openE, False <$ closeE]
+  let overlayAttrs = ffor visibleDyn $ \isVisible ->
+        "id" =: "video-upload-overlay" <> "class" =: "construction-overlay"
+          <> if isVisible then mempty else "style" =: "display:none"
+
+  closeE <- elDynAttr "div" overlayAttrs $ do
+    elAttr "div" ("class" =: "construction-backdrop" <> "aria-hidden" =: "true") blank
+    elAttr "div"
+      ( "class" =: "construction-modal glass rect video-upload-modal"
+     <> "role" =: "dialog"
+     <> "aria-modal" =: "true"
+      ) $ do
+      (closeBtnEl, _) <- elAttr' "button"
+        ( "class" =: "construction-close"
+       <> "type" =: "button"
+       <> "aria-label" =: "Cerrar"
+        ) $ text "\215"
+      elAttr "p" ("class" =: "construction-kicker") $ text "VIDEO"
+      elAttr "h3" ("class" =: "construction-title") $ text "Sube tu mensaje"
+      elAttr "form" ("id" =: "video-upload-form" <> "class" =: "video-upload-form") $ do
+        elAttr "input"
+          ( "id" =: "video-upload-name"
+         <> "class" =: "rsvp-input"
+         <> "name" =: "name"
+         <> "type" =: "text"
+         <> "placeholder" =: "Tu nombre"
+          ) blank
+        elAttr "textarea"
+          ( "id" =: "video-upload-message"
+         <> "class" =: "rsvp-input video-upload-message"
+         <> "name" =: "message"
+         <> "placeholder" =: "Mensaje opcional"
+          ) blank
+        elAttr "input"
+          ( "id" =: "video-upload-file"
+         <> "class" =: "rsvp-input video-upload-file"
+         <> "name" =: "video"
+         <> "type" =: "file"
+         <> "accept" =: "video/*"
+          ) blank
+        elAttr "p" ("id" =: "video-upload-status" <> "class" =: "rsvp-status") blank
+        elAttr "button"
+          ( "id" =: "video-upload-submit"
+         <> "class" =: "rsvp-btn construction-ok"
+         <> "type" =: "submit"
+          ) $ text "Enviar video"
+      return (domEvent Click closeBtnEl)
+  return ()
 
 -- ── Under construction popup ──────────────────────────────────────────────────
 
@@ -446,6 +552,11 @@ underConstructionOverlay openE = mdo
       return $ leftmost [domEvent Click closeBtnEl, domEvent Click okBtnEl]
 
   return ()
+
+-- ── Admin mount ───────────────────────────────────────────────────────────────
+
+adminRoot :: DomBuilder t m => m ()
+adminRoot = elAttr "div" ("id" =: "admin-root") blank
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1121,6 +1232,44 @@ siteCSS = T.unlines
   , "  margin-bottom: .8rem;"
   , "}"
   , ".video-wa-btn { margin-top: .8rem; }"
+  , ".video-upload-form { margin-top: 1.1rem; text-align: left; }"
+  , ".video-upload-message { min-height: 6rem; resize: vertical; }"
+  , ".video-upload-file { padding: .62rem; }"
+  , ".rsvp-status.is-error { color: #ffb4a8; }"
+  , ""
+
+  -- ── Admin dashboard ───────────────────────────────────────────────────────
+  , "#admin-root { display: none; min-height: 100svh; background: #160f0a; }"
+  , "body.admin-mode { background: #160f0a; overflow-x: hidden; }"
+  , "body.admin-mode .site-shell { display: none; }"
+  , "body.admin-mode #admin-root { display: block; }"
+  , ".admin-page { min-height: 100svh; padding: clamp(1rem, 4vw, 3rem); color: #f0ebe0; background: radial-gradient(circle at 20% 0%, rgba(176,129,76,.18), transparent 36%), #160f0a; }"
+  , ".admin-top { display: flex; justify-content: space-between; gap: 1rem; align-items: center; max-width: 1160px; margin: 0 auto 1.2rem; }"
+  , ".admin-top h1, .admin-login h1 { font-weight: 400; letter-spacing: .04em; }"
+  , ".admin-kicker { color: #d4b483; letter-spacing: .28em; font-size: .68rem; margin-bottom: .35rem; }"
+  , ".admin-muted { color: rgba(255,255,255,.68); line-height: 1.7; margin: .8rem 0 1.1rem; }"
+  , ".admin-login { width: min(92vw, 420px); margin: 12vh auto 0; padding: 2rem; border: 1px solid rgba(255,255,255,.16); border-radius: 22px; background: rgba(138,108,76,.18); box-shadow: 0 24px 70px rgba(0,0,0,.38); }"
+  , ".admin-input { width: 100%; margin: .45rem 0; padding: .78rem .88rem; border-radius: 10px; border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #f0ebe0; font-family: 'Courier Prime', monospace; }"
+  , ".admin-input:focus { outline: none; border-color: rgba(212,180,131,.75); }"
+  , ".admin-btn, .admin-link { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border: 1px solid rgba(212,180,131,.55); color: #fff; background: rgba(212,180,131,.12); border-radius: 999px; padding: .62rem 1rem; text-decoration: none; cursor: pointer; font-family: 'Courier Prime', monospace; font-size: .86rem; }"
+  , ".admin-btn:hover, .admin-link:hover { background: rgba(212,180,131,.22); }"
+  , ".admin-btn.ghost { background: transparent; border-color: rgba(255,255,255,.26); }"
+  , ".admin-btn.small { padding: .48rem .8rem; font-size: .78rem; }"
+  , ".admin-actions { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: flex-end; }"
+  , ".admin-tabs { max-width: 1160px; margin: 0 auto 1.2rem; display: flex; gap: .55rem; flex-wrap: wrap; }"
+  , ".admin-tabs button { border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: rgba(255,255,255,.72); border-radius: 999px; padding: .55rem .9rem; cursor: pointer; font-family: 'Courier Prime', monospace; }"
+  , ".admin-tabs button.active { color: #160f0a; background: #d4b483; border-color: #d4b483; }"
+  , ".admin-panel { max-width: 1160px; margin: 0 auto; }"
+  , ".admin-grid { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 1rem; align-items: start; }"
+  , ".admin-card { border: 1px solid rgba(255,255,255,.14); border-radius: 20px; background: rgba(255,255,255,.06); padding: 1rem; box-shadow: 0 18px 50px rgba(0,0,0,.24); }"
+  , ".admin-card h2 { font-weight: 400; font-size: 1rem; letter-spacing: .08em; margin-bottom: .8rem; color: #fff; }"
+  , ".admin-list { display: grid; gap: .7rem; }"
+  , ".admin-row { display: flex; justify-content: space-between; gap: .8rem; align-items: center; padding: .8rem; border: 1px solid rgba(255,255,255,.10); border-radius: 14px; background: rgba(0,0,0,.14); }"
+  , ".admin-row strong { color: #fff; font-weight: 400; }"
+  , ".admin-row p { margin-top: .25rem; color: rgba(255,255,255,.65); font-size: .82rem; line-height: 1.45; }"
+  , ".admin-danger { border: 1px solid rgba(255,120,105,.45); color: #ffd7d1; background: rgba(255,120,105,.10); border-radius: 999px; padding: .46rem .72rem; cursor: pointer; }"
+  , ".admin-error { color: #ffb4a8; min-height: 1.2rem; margin-top: .8rem; }"
+  , "@media (max-width: 760px) { .admin-top { align-items: flex-start; flex-direction: column; } .admin-actions { justify-content: flex-start; } .admin-grid { grid-template-columns: 1fr; } .admin-row { align-items: flex-start; flex-direction: column; } }"
   , ""
 
   -- ── [data-reveal] — scroll-driven reveal (visible by default for Safari) ──
