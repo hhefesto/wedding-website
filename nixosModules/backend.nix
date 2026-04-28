@@ -34,11 +34,34 @@ in {
   config = lib.mkIf cfg.enable {
     services.wedding.database.enable = lib.mkDefault true;
 
+    systemd.services.wedding-migrate = {
+      description = "Wedding RSVP schema migrations";
+      wantedBy    = [ "multi-user.target" ];
+      before      = [ "wedding-backend.service" ];
+      after       = [ "postgresql.service" ];
+      requires    = [ "postgresql.service" ];
+
+      environment = {
+        MIGRATIONS_DIR = "${cfg.package}/share/wedding-migrations";
+      } // lib.optionalAttrs (cfg.databaseUrlFile == null) {
+        DATABASE_URL = cfg.databaseUrl;
+      };
+
+      serviceConfig = {
+        Type            = "oneshot";
+        RemainAfterExit = true;
+        ExecStart       = "${cfg.package}/bin/wedding-migrate";
+        DynamicUser     = true;
+      } // lib.optionalAttrs (cfg.databaseUrlFile != null) {
+        EnvironmentFile = cfg.databaseUrlFile;
+      };
+    };
+
     systemd.services.wedding-backend = {
       description = "Wedding RSVP backend";
       wantedBy    = [ "multi-user.target" ];
-      after       = [ "postgresql.service" ];
-      requires    = [ "postgresql.service" ];
+      after       = [ "postgresql.service" "wedding-migrate.service" ];
+      requires    = [ "postgresql.service" "wedding-migrate.service" ];
 
       environment = {
         WEDDING_PORT = toString cfg.port;

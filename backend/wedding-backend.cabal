@@ -38,3 +38,13 @@ executable wedding-backend
     , wedding-backend
     , warp
   default-language:   Haskell2010
+
+executable wedding-migrate
+  main-is:            Migrate.hs
+  hs-source-dirs:     app
+  build-depends:
+      base
+    , bytestring
+    , postgresql-simple
+    , postgresql-simple-migration
+  default-language:   Haskell2010

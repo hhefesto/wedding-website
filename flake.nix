@@ -48,7 +48,12 @@
           wedding-shared  = self.callCabal2nix "wedding-shared"  ./shared  {};
           wedding-backend = self.callCabal2nix "wedding-backend" ./backend {};
         });
-        weddingBackend = pkgs.haskell.lib.justStaticExecutables hpkgs.wedding-backend;
+        weddingBackendBins = pkgs.haskell.lib.justStaticExecutables hpkgs.wedding-backend;
+        weddingBackend = pkgs.runCommand "wedding-backend" { } ''
+          mkdir -p "$out/bin" "$out/share/wedding-migrations"
+          cp -r ${weddingBackendBins}/bin/. "$out/bin/"
+          cp ${./backend/migrations}/*.sql "$out/share/wedding-migrations/"
+        '';
 
         project = rp.project ({ ... }: {
           packages = {
