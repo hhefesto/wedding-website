@@ -29,7 +29,9 @@
 , uploadMaxBodySize ? "200m"
 , localHostAlias ? false
 , localPostgresTrust ? false
+, recommendedGzipSettings ? false
 , tls ? {}
+, acme ? {}
 }:
 { config, lib, pkgs, ... }:
 let
@@ -38,6 +40,10 @@ let
     forceSSL = false;
     openFirewall = false;
   } // tls;
+  acmeCfg = {
+    acceptTerms = false;
+    email = null;
+  } // acme;
 in
 {
   imports = [
@@ -48,6 +54,8 @@ in
 
   config = lib.mkMerge [
     {
+      services.nginx.recommendedGzipSettings = lib.mkForce recommendedGzipSettings;
+
       services.wedding.database = {
         enable = true;
         port   = ports.database;
@@ -96,6 +104,14 @@ in
 
     (lib.mkIf tlsCfg.openFirewall {
       networking.firewall.allowedTCPPorts = [ 443 ];
+    })
+
+    (lib.mkIf tlsCfg.enableACME {
+      security.acme = {
+        acceptTerms = acmeCfg.acceptTerms;
+      } // lib.optionalAttrs (acmeCfg.email != null) {
+        defaults.email = acmeCfg.email;
+      };
     })
   ];
 }
