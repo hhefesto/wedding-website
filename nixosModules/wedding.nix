@@ -10,6 +10,7 @@
 #     };
 #     databaseName = "wedding";
 #     serverName   = "wedding.local";
+#     localHostAlias = true;
 #   };
 #
 # Then add `wedding` to the host's modules list.
@@ -26,8 +27,18 @@
 , videoMaxBytes ? 200 * 1024 * 1024
 , cookieSecure ? false
 , uploadMaxBodySize ? "200m"
+, localHostAlias ? false
+, localPostgresTrust ? false
+, tls ? {}
 }:
 { config, lib, pkgs, ... }:
+let
+  tlsCfg = {
+    enableACME = false;
+    forceSSL = false;
+    openFirewall = false;
+  } // tls;
+in
 {
   imports = [
     ./database.nix
@@ -35,30 +46,56 @@
     ./frontend.nix
   ];
 
-  services.wedding.database = {
-    enable = true;
-    port   = ports.database;
-    dbName = databaseName;
-    user   = databaseName;
-  };
+  config = lib.mkMerge [
+    {
+      services.wedding.database = {
+        enable = true;
+        port   = ports.database;
+        dbName = databaseName;
+        user   = databaseName;
+      };
 
-  services.wedding.backend = {
-    enable = true;
-    port = ports.backend;
-    package = packages.backend;
-    adminPasswordHashFile = adminPasswordHashFile;
-    videoDir = videoDir;
-    videoMaxBytes = videoMaxBytes;
-    cookieSecure = cookieSecure;
-  };
+      services.wedding.backend = {
+        enable = true;
+        port = ports.backend;
+        package = packages.backend;
+        adminPasswordHashFile = adminPasswordHashFile;
+        videoDir = videoDir;
+        videoMaxBytes = videoMaxBytes;
+        cookieSecure = cookieSecure;
+      };
 
-  services.wedding.frontend = {
-    enable     = true;
-    port       = ports.nginx;
-    serverName = serverName;
-    staticRoot = packages.staticRoot;
-    uploadMaxBodySize = uploadMaxBodySize;
-  };
+      services.wedding.frontend = {
+        enable     = true;
+        port       = ports.nginx;
+        serverName = serverName;
+        staticRoot = packages.staticRoot;
+        uploadMaxBodySize = uploadMaxBodySize;
+      };
 
-  networking.firewall.allowedTCPPorts = lib.mkIf openFirewall [ ports.nginx ];
+      networking.firewall.allowedTCPPorts = lib.mkIf openFirewall [ ports.nginx ];
+    }
+
+    (lib.mkIf localHostAlias {
+      networking.hosts."127.0.0.1" = [ serverName ];
+    })
+
+    (lib.mkIf localPostgresTrust {
+      services.postgresql.authentication = lib.mkAfter ''
+        host all ${databaseName} 127.0.0.1/32 trust
+        host all ${databaseName} ::1/128      trust
+      '';
+    })
+
+    (lib.mkIf (tlsCfg.enableACME || tlsCfg.forceSSL) {
+      services.nginx.virtualHosts.${serverName} = {
+        enableACME = tlsCfg.enableACME;
+        forceSSL = tlsCfg.forceSSL;
+      };
+    })
+
+    (lib.mkIf tlsCfg.openFirewall {
+      networking.firewall.allowedTCPPorts = [ 443 ];
+    })
+  ];
 }
