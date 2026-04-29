@@ -62,8 +62,8 @@ in {
       description = "Wedding RSVP schema migrations";
       wantedBy    = [ "multi-user.target" ];
       before      = [ "wedding-backend.service" ];
-      after       = [ "postgresql.service" ];
-      requires    = [ "postgresql.service" ];
+      after       = [ "postgresql.service" "postgresql-setup.service" ];
+      requires    = [ "postgresql.service" "postgresql-setup.service" ];
 
       environment = {
         MIGRATIONS_DIR = "${cfg.package}/share/wedding-migrations";
@@ -84,8 +84,8 @@ in {
     systemd.services.wedding-backend = {
       description = "Wedding RSVP backend";
       wantedBy    = [ "multi-user.target" ];
-      after       = [ "postgresql.service" "wedding-migrate.service" ];
-      requires    = [ "postgresql.service" "wedding-migrate.service" ];
+      after       = [ "postgresql.service" "postgresql-setup.service" "wedding-migrate.service" ];
+      requires    = [ "postgresql.service" "postgresql-setup.service" "wedding-migrate.service" ];
 
       environment = {
         WEDDING_PORT = toString cfg.port;
