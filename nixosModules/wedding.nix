@@ -22,6 +22,8 @@
 , databaseName ? "wedding"    # DB name and owning role on the shared cluster
 , serverName   ? "_"
 , openFirewall ? true
+, databasePasswordFile ? null
+, databaseUrlFile ? null
 , adminPasswordHashFile ? null
 , videoDir ? "/var/lib/wedding/videos"
 , videoMaxBytes ? 200 * 1024 * 1024
@@ -61,12 +63,14 @@ in
         port   = ports.database;
         dbName = databaseName;
         user   = databaseName;
+        passwordFile = databasePasswordFile;
       };
 
       services.wedding.backend = {
         enable = true;
         port = ports.backend;
         package = packages.backend;
+        databaseUrlFile = databaseUrlFile;
         adminPasswordHashFile = adminPasswordHashFile;
         videoDir = videoDir;
         videoMaxBytes = videoMaxBytes;
@@ -99,6 +103,10 @@ in
       services.nginx.virtualHosts.${serverName} = {
         enableACME = tlsCfg.enableACME;
         forceSSL = tlsCfg.forceSSL;
+        listen = lib.mkAfter [
+          { addr = "0.0.0.0"; port = 443; ssl = true; }
+          { addr = "[::]"; port = 443; ssl = true; }
+        ];
       };
     })
 
