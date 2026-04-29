@@ -63,6 +63,7 @@ in
         port   = ports.database;
         dbName = databaseName;
         user   = databaseName;
+      } // lib.optionalAttrs (databasePasswordFile != null) {
         passwordFile = databasePasswordFile;
       };
 
@@ -70,8 +71,11 @@ in
         enable = true;
         port = ports.backend;
         package = packages.backend;
+      } // lib.optionalAttrs (databaseUrlFile != null) {
         databaseUrlFile = databaseUrlFile;
+      } // lib.optionalAttrs (adminPasswordHashFile != null) {
         adminPasswordHashFile = adminPasswordHashFile;
+      } // {
         videoDir = videoDir;
         videoMaxBytes = videoMaxBytes;
         cookieSecure = cookieSecure;
