@@ -54,20 +54,14 @@ in {
       host  all ${cfg.user} ::1/128 md5
     '';
 
-    systemd.services.postgresql.postStart =
+    systemd.services.postgresql-setup.postStart =
       lib.mkIf (cfg.passwordFile != null)
         (lib.mkAfter ''
-          for i in $(${pkgs.coreutils}/bin/seq 1 30); do
-            if ${pkgs.postgresql}/bin/psql -v ON_ERROR_STOP=1 -d postgres \
-                 -tAc "SELECT 1 FROM pg_roles WHERE rolname='${cfg.user}'" \
-                 | ${pkgs.gnugrep}/bin/grep -q 1; then
-              break
-            fi
-            ${pkgs.coreutils}/bin/sleep 1
-          done
           pw="$(${pkgs.coreutils}/bin/cat ${cfg.passwordFile})"
-          ${pkgs.postgresql}/bin/psql -v ON_ERROR_STOP=1 -d postgres \
-            -c "ALTER USER ${cfg.user} WITH PASSWORD '$pw';"
+          ${config.services.postgresql.package}/bin/psql \
+            -v ON_ERROR_STOP=1 -d postgres -v pw="$pw" <<'SQL'
+          ALTER USER ${cfg.user} WITH PASSWORD :'pw';
+          SQL
         '');
   };
 }
