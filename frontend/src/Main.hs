@@ -43,8 +43,6 @@ bodyW = do
   videoUploadOverlay videoOpenE
   pb <- getPostBuild
   performEvent_ $ liftJSM (void $ eval navHighlightingJS) <$ pb
-  performEvent_ $ liftJSM (void $ eval adminAppJS) <$ pb
-  performEvent_ $ liftJSM (void $ eval videoUploadJS) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -112,53 +110,6 @@ navHighlightingJS =
   <> "},{rootMargin:'-40% 0px -40% 0px',threshold:0});"
   <> "document.querySelectorAll('.image-section').forEach(function(s){obs.observe(s);});"
   <> "})()"
-
-adminAppJS :: String
-adminAppJS = unlines
-  [ "(function(){"
-  , "if(window.__weddingAdminReady){return;}"
-  , "window.__weddingAdminReady=true;"
-  , "var root=document.getElementById('admin-root');"
-  , "if(!root){return;}"
-  , "var state={tab:'invitees',invitees:[],rsvps:[],videos:[]};"
-  , "function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
-  , "function date(v){return esc(String(v||'').replace('T',' ').slice(0,19));}"
-  , "function api(path,opt){opt=opt||{};opt.credentials='same-origin';return fetch(path,opt);}"
-  , "function jsonApi(path,opt){return api(path,opt).then(function(r){if(!r.ok){throw new Error(String(r.status));} return r.json();});}"
-  , "function isAdmin(){return window.location.hash==='#admin' || window.location.hash==='#/admin';}"
-  , "function syncRoute(){document.body.classList.toggle('admin-mode',isAdmin()); if(isAdmin()){checkSession();}}"
-  , "window.addEventListener('hashchange',syncRoute);"
-  , "function checkSession(){api('/api/admin/me').then(function(r){if(r.ok){renderShell(); loadAll();}else{renderLogin('');}}).catch(function(){renderLogin('');});}"
-  , "function renderLogin(msg){root.innerHTML='<main class=\"admin-page\"><section class=\"admin-login\"><p class=\"admin-kicker\">ADMIN</p><h1>Wedding dashboard</h1><p class=\"admin-muted\">Enter the admin password to manage invitees, RSVPs, and videos.</p><form id=\"admin-login-form\"><input id=\"admin-password\" class=\"admin-input\" type=\"password\" placeholder=\"Password\" autocomplete=\"current-password\" autofocus><button class=\"admin-btn\" type=\"submit\">Enter</button><p class=\"admin-error\">'+esc(msg)+'</p></form></section></main>';"
-  , "document.getElementById('admin-login-form').addEventListener('submit',function(e){e.preventDefault();var p=document.getElementById('admin-password').value;api('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p})}).then(function(r){if(!r.ok){throw new Error('bad');}renderShell();loadAll();}).catch(function(){renderLogin('Invalid password.');});});}"
-  , "function renderShell(){root.innerHTML='<main class=\"admin-page\"><header class=\"admin-top\"><div><p class=\"admin-kicker\">ADMIN</p><h1>Wedding dashboard</h1></div><div class=\"admin-actions\"><a class=\"admin-link\" href=\"#hero\">Public site</a><button id=\"admin-logout\" class=\"admin-btn ghost\" type=\"button\">Log out</button></div></header><nav class=\"admin-tabs\"><button data-tab=\"invitees\">Invitees</button><button data-tab=\"rsvps\">RSVPs</button><button data-tab=\"videos\">Videos</button></nav><section id=\"admin-panel\" class=\"admin-panel\"></section></main>';"
-  , "document.getElementById('admin-logout').addEventListener('click',function(){api('/api/admin/logout',{method:'POST'}).finally(function(){renderLogin('');});});"
-  , "root.querySelectorAll('[data-tab]').forEach(function(b){b.addEventListener('click',function(){state.tab=b.getAttribute('data-tab');renderPanel();});});renderPanel();}"
-  , "function loadAll(){Promise.all([jsonApi('/api/admin/invitees'),jsonApi('/api/admin/rsvps'),jsonApi('/api/admin/videos')]).then(function(xs){state.invitees=xs[0];state.rsvps=xs[1];state.videos=xs[2];renderPanel();}).catch(function(){renderLogin('Session expired.');});}"
-  , "function setTabs(){root.querySelectorAll('[data-tab]').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-tab')===state.tab);});}"
-  , "function renderPanel(){var panel=document.getElementById('admin-panel');if(!panel){return;}setTabs();if(state.tab==='invitees'){renderInvitees(panel);}else if(state.tab==='rsvps'){renderRsvps(panel);}else{renderVideos(panel);}}"
-  , "function renderInvitees(panel){panel.innerHTML='<div class=\"admin-grid\"><form id=\"invitee-form\" class=\"admin-card admin-form\"><h2>Add invitee</h2><input class=\"admin-input\" name=\"name\" placeholder=\"Name\" required><input class=\"admin-input\" name=\"code\" placeholder=\"Invitation code (optional)\"><input class=\"admin-input\" name=\"maxGuests\" type=\"number\" min=\"1\" max=\"20\" value=\"1\"><textarea class=\"admin-input\" name=\"notes\" placeholder=\"Notes\"></textarea><button class=\"admin-btn\" type=\"submit\">Add invitee</button></form><div class=\"admin-card\"><h2>Invitees ('+state.invitees.length+')</h2><div class=\"admin-list\">'+state.invitees.map(function(i){return '<article class=\"admin-row\"><div><strong>'+esc(i.name)+'</strong><p>'+esc(i.code||'no code')+' · max '+esc(i.maxGuests)+' guests</p><p>'+esc(i.notes||'')+'</p></div><button class=\"admin-danger\" data-delete=\"'+esc(i.id)+'\">Delete</button></article>';}).join('')+'</div></div></div>';"
-  , "document.getElementById('invitee-form').addEventListener('submit',function(e){e.preventDefault();var f=e.currentTarget;var body={name:f.name.value,code:f.code.value||null,maxGuests:parseInt(f.maxGuests.value||'1',10),notes:f.notes.value||null};api('/api/admin/invitees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){if(!r.ok){throw new Error('bad');}return r.json();}).then(function(i){state.invitees.unshift(i);renderPanel();}).catch(function(){alert('Could not create invitee.');});});"
-  , "panel.querySelectorAll('[data-delete]').forEach(function(b){b.addEventListener('click',function(){if(!confirm('Delete invitee?')){return;}var id=b.getAttribute('data-delete');api('/api/admin/invitees/'+encodeURIComponent(id),{method:'DELETE'}).then(function(r){if(!r.ok){throw new Error('bad');}state.invitees=state.invitees.filter(function(i){return String(i.id)!==String(id);});renderPanel();}).catch(function(){alert('Could not delete invitee.');});});});}"
-  , "function renderRsvps(panel){panel.innerHTML='<div class=\"admin-card\"><h2>RSVPs ('+state.rsvps.length+')</h2><div class=\"admin-list\">'+state.rsvps.map(function(r){return '<article class=\"admin-row\"><div><strong>'+esc(r.name)+'</strong><p>'+esc(r.guestCount)+' guests · '+date(r.createdAt)+'</p><p>Invitee: '+esc(r.inviteeId||'unmatched')+' · Code: '+esc(r.invitationCodeUsed||'none')+'</p><p>'+esc(r.dietary||'')+'</p></div></article>';}).join('')+'</div></div>'; }"
-  , "function renderVideos(panel){panel.innerHTML='<div class=\"admin-card\"><h2>Videos ('+state.videos.length+')</h2><div class=\"admin-list\">'+state.videos.map(function(v){return '<article class=\"admin-row\"><div><strong>'+esc(v.originalFilename)+'</strong><p>'+esc(v.contentType)+' · '+Math.round((v.sizeBytes||0)/1048576*10)/10+' MB · '+date(v.createdAt)+'</p><p>'+esc(v.submitterName||'anonymous')+' '+esc(v.message||'')+'</p></div><a class=\"admin-btn small\" href=\"/api/admin/videos/'+encodeURIComponent(v.id)+'/download\">Download</a></article>';}).join('')+'</div></div>'; }"
-  , "syncRoute();"
-  , "})()"
-  ]
-
-videoUploadJS :: String
-videoUploadJS = unlines
-  [ "(function(){"
-  , "if(window.__weddingVideoUploadReady){return;}"
-  , "window.__weddingVideoUploadReady=true;"
-  , "var form=document.getElementById('video-upload-form');"
-  , "if(!form){return;}"
-  , "var status=document.getElementById('video-upload-status');"
-  , "var submit=document.getElementById('video-upload-submit');"
-  , "function setStatus(msg,bad){status.textContent=msg||'';status.classList.toggle('is-error',!!bad);}"
-  , "form.addEventListener('submit',function(e){e.preventDefault();var file=document.getElementById('video-upload-file').files[0];if(!file){setStatus('Choose a video first.',true);return;}var fd=new FormData();fd.append('name',document.getElementById('video-upload-name').value||'');fd.append('message',document.getElementById('video-upload-message').value||'');fd.append('video',file,file.name);submit.disabled=true;setStatus('Uploading... this can take a moment.',false);fetch('/api/videos',{method:'POST',body:fd}).then(function(r){if(!r.ok){throw new Error(String(r.status));}return r.json();}).then(function(){form.reset();setStatus('Video uploaded. Thank you!',false);}).catch(function(){setStatus('Upload failed. Try again with a smaller video.',true);}).finally(function(){submit.disabled=false;});});"
-  , "})()"
-  ]
 
 fixedNav :: DomBuilder t m => m ()
 fixedNav =
