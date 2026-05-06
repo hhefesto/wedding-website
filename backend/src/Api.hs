@@ -32,7 +32,7 @@ import           System.Process             (readProcessWithExitCode)
 import           Auth                       (generateToken, verifyPassword)
 import qualified Db
 import           Upload                     (saveVideoUpload)
-import           Wedding.Types              (InviteLookup, Invitee (..), InviteeInput,
+import           Wedding.Types              (InviteLookup, Invitee (..), InviteeInput (..),
                                              LinkInviteeBody, LoginRequest (..),
                                              RsvpLoginRequest (..),
                                              RsvpAdmin, RsvpRequest (..),
@@ -120,13 +120,9 @@ rsvpLoginH :: ConnVar -> RsvpLoginRequest -> Handler (SetCookie NoContent)
 rsvpLoginH var req = do
   mInvitee <- withDb var (`Db.getInviteeByCode` rsvpLoginCode req)
   invitee <- maybe (throwError err401) pure mInvitee
-  hasRsvp <- withDb var (\conn -> Db.inviteeHasRsvp conn (inviteeId invitee))
-  if not hasRsvp
-    then throwError err401
-    else do
-      token <- liftIO generateToken
-      withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
-      pure (addHeader (rsvpSessionCookie token) NoContent)
+  token <- liftIO generateToken
+  withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
+  pure (addHeader (rsvpSessionCookie token) NoContent)
 
 rsvpMeH :: ConnVar -> Maybe Text -> Handler NoContent
 rsvpMeH var mCookie = do
@@ -172,7 +168,8 @@ listInviteesH var mCookie = do
 createInviteeH :: ConnVar -> Maybe Text -> InviteeInput -> Handler Invitee
 createInviteeH var mCookie input = do
   requireAdmin var mCookie
-  withDb var (`Db.createInvitee` input)
+  inputWithCode <- ensureInviteeCode input
+  withDb var (`Db.createInvitee` inputWithCode)
 
 updateInviteeH :: ConnVar -> Int64 -> Maybe Text -> InviteeInput -> Handler Invitee
 updateInviteeH var iid mCookie input = do
@@ -297,6 +294,14 @@ nonEmpty :: Text -> Maybe Text
 nonEmpty value =
   let stripped = T.strip value
    in if T.null stripped then Nothing else Just stripped
+
+ensureInviteeCode :: InviteeInput -> Handler InviteeInput
+ensureInviteeCode input =
+  case iiCode input >>= nonEmpty of
+    Just code -> pure input { iiCode = Just code }
+    Nothing -> do
+      token <- liftIO generateToken
+      pure input { iiCode = Just ("INV-" <> T.filter (/= '-') token) }
 
 inviteeUrl :: AppConfig -> Text -> Text
 inviteeUrl cfg code = appPublicBaseUrl cfg <> "/?code=" <> urlEncode code <> "#rsvp"

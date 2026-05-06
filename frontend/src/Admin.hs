@@ -4,10 +4,12 @@ module Main where
 
 import           Data.Aeson               (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy     as BL
+import           Control.Monad            (void)
 import           Data.Map                 (Map)
 import           Data.Text                (Text)
 import qualified Data.Text                as T
 import qualified Data.Text.Encoding       as TE
+import           Language.Javascript.JSaddle (MonadJSM, eval, liftJSM)
 import           Reflex.Dom
 import           Text.Read                (readMaybe)
 import           Wedding.Types            (AttendanceStatus (..), Invitee (..),
@@ -25,9 +27,10 @@ headW = do
 data AdminTab = TabInvitees | TabRsvps | TabVideos
   deriving (Eq)
 
-adminRoot :: MonadWidget t m => m ()
+adminRoot :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 adminRoot = mdo
   pb <- getPostBuild
+  performEvent_ $ liftJSM (void $ eval adminCopyQrJS) <$ pb
   meRespE <- performRequestAsync (xhrGet "/api/admin/me" <$ pb)
   authDyn <- holdDyn False $ leftmost
     [ True <$ xhrOk meRespE
@@ -137,7 +140,10 @@ adminInviteeRow inviteeDyn = elAttr "article" ("class" =: "admin-row") $ do
           text "Abrir liga RSVP"
   dyn_ $ ffor inviteeDyn $ \invitee -> case inviteeCode invitee of
     Nothing -> blank
-    Just _  -> elAttr "img" (inviteeQrAttrs invitee) blank
+    Just code -> elAttr "div" ("class" =: "admin-qr-box") $ do
+      elAttr "img" (inviteeQrAttrs invitee) blank
+      elAttr "button" (copyQrAttrs invitee code) $ text "Copiar QR"
+      elAttr "button" (copyLinkAttrs code) $ text "Copiar liga"
   (btnEl, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
   pure (fromIntegral . inviteeId <$> current inviteeDyn `tag` domEvent Click btnEl)
 
@@ -238,6 +244,19 @@ inviteeQrAttrs invitee =
   <> "src" =: ("/api/admin/invitees/" <> T.pack (show (inviteeId invitee)) <> "/qr")
   <> "alt" =: ("QR RSVP " <> inviteeName invitee)
 
+copyQrAttrs :: Invitee -> Text -> Map Text Text
+copyQrAttrs invitee code =
+  "class" =: "admin-btn small admin-copy-qr"
+  <> "type" =: "button"
+  <> "data-qr-src" =: ("/api/admin/invitees/" <> T.pack (show (inviteeId invitee)) <> "/qr")
+  <> "data-rsvp-link" =: inviteeUrl code
+
+copyLinkAttrs :: Text -> Map Text Text
+copyLinkAttrs code =
+  "class" =: "admin-btn small ghost admin-copy-link"
+  <> "type" =: "button"
+  <> "data-rsvp-link" =: inviteeUrl code
+
 statusLabel :: AttendanceStatus -> Text
 statusLabel Attending = "attending"
 statusLabel Declined  = "declined"
@@ -262,6 +281,21 @@ videoDownloadAttrs :: VideoAdmin -> Map Text Text
 videoDownloadAttrs v =
   "class" =: "admin-btn small" <> "href" =: ("/api/admin/videos/" <> vaId v <> "/download")
 
+adminCopyQrJS :: Text
+adminCopyQrJS = T.concat
+  [ "(function(){"
+  , "if(window.__weddingAdminCopyQrReady)return;window.__weddingAdminCopyQrReady=1;"
+  , "function abs(u){return new URL(u,window.location.origin).href;}"
+  , "function note(m){var n=document.getElementById('admin-copy-status');if(!n){n=document.createElement('div');n.id='admin-copy-status';n.className='admin-copy-status';document.body.appendChild(n);}n.textContent=m;setTimeout(function(){n.textContent='';},3500);}"
+  , "function copyText(t){return navigator.clipboard.writeText(t).then(function(){note('Liga copiada.');});}"
+  , "document.addEventListener('click',function(e){var qr=e.target.closest&&e.target.closest('.admin-copy-qr');var link=e.target.closest&&e.target.closest('.admin-copy-link');if(!qr&&!link)return;"
+  , "if(link){copyText(abs(link.dataset.rsvpLink||'/')).catch(function(){note('No se pudo copiar la liga.');});return;}"
+  , "var fallback=abs(qr.dataset.rsvpLink||'/');var src=qr.dataset.qrSrc;if(!navigator.clipboard||!window.ClipboardItem){copyText(fallback).catch(function(){window.open(src,'_blank');});return;}"
+  , "fetch(src,{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.blob();}).then(function(b){return navigator.clipboard.write([new ClipboardItem({'image/png':b})]);}).then(function(){note('QR copiado. Pegalo en WhatsApp.');}).catch(function(){copyText(fallback).catch(function(){window.open(src,'_blank');});});"
+  , "});"
+  , "})()"
+  ]
+
 adminCSS :: Text
 adminCSS = T.unlines
   [ "@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;1,400&display=swap');"
@@ -279,6 +313,7 @@ adminCSS = T.unlines
   , ".admin-btn:hover, .admin-link:hover { background: rgba(212,180,131,.22); }"
   , ".admin-btn.ghost { background: transparent; border-color: rgba(255,255,255,.26); }"
   , ".admin-btn.small { padding: .48rem .8rem; font-size: .78rem; }"
+  , "button.admin-btn { appearance: none; }"
   , ".admin-link.small { padding: .4rem .68rem; font-size: .72rem; margin-top: .25rem; }"
   , ".admin-actions { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: flex-end; }"
   , ".admin-tabs { max-width: 1160px; margin: 0 auto 1.2rem; display: flex; gap: .55rem; flex-wrap: wrap; }"
@@ -292,7 +327,9 @@ adminCSS = T.unlines
   , ".admin-row { display: flex; justify-content: space-between; gap: .8rem; align-items: center; padding: .8rem; border: 1px solid rgba(255,255,255,.10); border-radius: 14px; background: rgba(0,0,0,.14); }"
   , ".admin-row strong { color: #fff; font-weight: 400; }"
   , ".admin-row p { margin-top: .25rem; color: rgba(255,255,255,.65); font-size: .82rem; line-height: 1.45; }"
+  , ".admin-qr-box { display: grid; gap: .45rem; justify-items: center; }"
   , ".admin-qr { width: 96px; height: 96px; padding: .35rem; background: rgba(255,255,255,.94); border-radius: 10px; object-fit: contain; }"
+  , ".admin-copy-status { position: fixed; right: 1rem; bottom: 1rem; z-index: 50; min-height: 1.5rem; color: #160f0a; background: #d4b483; border-radius: 999px; padding: .55rem .85rem; box-shadow: 0 14px 40px rgba(0,0,0,.32); }"
   , ".admin-danger { border: 1px solid rgba(255,120,105,.45); color: #ffd7d1; background: rgba(255,120,105,.10); border-radius: 999px; padding: .46rem .72rem; cursor: pointer; }"
   , ".admin-error { color: #ffb4a8; min-height: 1.2rem; margin-top: .8rem; }"
   , "@media (max-width: 760px) { .admin-top { align-items: flex-start; flex-direction: column; } .admin-actions { justify-content: flex-start; } .admin-grid { grid-template-columns: 1fr; } .admin-row { align-items: flex-start; flex-direction: column; } }"
