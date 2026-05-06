@@ -10,6 +10,7 @@
   inputs = {
     nixpkgs.url    = "github:NixOS/nixpkgs/nixos-24.05";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    agenix.url = "github:ryantm/agenix";
 
     # reflex-platform provides a ready-made GHCJS + reflex-dom package set
     reflex-platform = {
@@ -34,7 +35,7 @@
         ]; };
       };
 
-      perSystem = { self', system, ... }:
+      perSystem = { self', system, inputs', ... }:
       let
         pkgs = import inputs.nixpkgs { inherit system; };
 
@@ -92,7 +93,7 @@
 
         # Static website: index.html + GHCJS JS files + public assets
         website = pkgs.runCommand "wedding-website" {
-          nativeBuildInputs = [ pkgs.rsync ];
+          nativeBuildInputs = [ pkgs.rsync pkgs.qrencode ];
         } ''
           mkdir -p "$out/images"
 
@@ -108,6 +109,11 @@
 
           # Our HTML shell overwrites any index.html from the jsexe bundle
           install -m644 ${./index.html} "$out/index.html"
+
+          qrencode -t PNG -s 6 -m 2 -o "$out/qr-registry.png" \
+            "https://mesaderegalos.liverpool.com.mx/milistaderegalos/51981423"
+          qrencode -t PNG -s 6 -m 2 -o "$out/qr-location.png" \
+            "https://www.google.com/maps/search/?api=1&query=20.5229282,-100.4039031"
         '';
 
         adminWebsite = pkgs.runCommand "wedding-admin-website" {
@@ -126,7 +132,10 @@
         packages.default         = website;
 
         # ── Dev shell (GHC + cabal, jsaddle-warp browser preview) ──────────
-        devShells.default = project.shells.ghc;
+        devShells.default = pkgs.mkShell {
+          inputsFrom = [ project.shells.ghc ];
+          packages = [ inputs'.agenix.packages.default ];
+        };
 
         # ── Apps ────────────────────────────────────────────────────────────
 

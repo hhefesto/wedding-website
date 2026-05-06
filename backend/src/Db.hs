@@ -4,9 +4,14 @@ module Db
   , submitRsvpRequest
   , insertSession
   , lookupSession
+  , insertRsvpSession
+  , lookupRsvpSession
   , deleteSession
   , purgeExpiredSessions
   , listInvitees
+  , getInvitee
+  , getInviteeByCode
+  , inviteeHasRsvp
   , createInvitee
   , updateInvitee
   , deleteInvitee
@@ -48,7 +53,7 @@ instance FromRow RsvpAdmin where
     pure (RsvpAdmin rid rname status count rdietary rinvitee code created)
 
 instance FromRow VideoAdmin where
-  fromRow = VideoAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = VideoAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 initDb :: IO Connection
 initDb = do
@@ -74,7 +79,7 @@ lookupInvite conn rawCode =
           , ilGuestCount = mCount
           }
 
-submitRsvpRequest :: Connection -> RsvpRequest -> IO (Either Text ())
+submitRsvpRequest :: Connection -> RsvpRequest -> IO (Either Text Invitee)
 submitRsvpRequest conn r = do
   case nonEmpty (rrInvitationCode r) of
     Nothing -> pure (Left "El codigo de invitacion es obligatorio.")
@@ -95,7 +100,7 @@ submitRsvpRequest conn r = do
                 , inviteeId invitee
                 , Just code
                 )
-              pure (Right ())
+              pure (Right invitee)
 
 findInviteeByCode :: Connection -> Text -> IO (Maybe Invitee)
 findInviteeByCode conn code = do
@@ -130,6 +135,26 @@ lookupSession conn token = do
     (token, now)
   pure (not (null rows))
 
+insertRsvpSession :: Connection -> Text -> Int64 -> IO ()
+insertRsvpSession conn token iid = do
+  now <- getCurrentTime
+  let expires = addUTCTime (180 * 24 * 3600) now
+  void $ execute conn
+    "INSERT INTO rsvp_sessions (token, invitee_id, expires_at) VALUES (?, ?, ?)"
+    (token, iid, expires)
+
+lookupRsvpSession :: Connection -> Text -> IO (Maybe Invitee)
+lookupRsvpSession conn token = do
+  now <- getCurrentTime
+  rows <- query conn
+    ("SELECT i.id, i.name, i.code, i.max_guests, i.notes, i.created_at::text " <>
+     "FROM rsvp_sessions s JOIN invitees i ON i.id = s.invitee_id " <>
+     "WHERE s.token = ? AND s.expires_at > ? LIMIT 1")
+    (token, now)
+  pure $ case rows of
+    []    -> Nothing
+    (i:_) -> Just i
+
 deleteSession :: Connection -> Text -> IO ()
 deleteSession conn token =
   void $ execute conn "DELETE FROM admin_sessions WHERE token = ?" (Only token)
@@ -138,10 +163,34 @@ purgeExpiredSessions :: Connection -> IO ()
 purgeExpiredSessions conn = do
   now <- getCurrentTime
   void $ execute conn "DELETE FROM admin_sessions WHERE expires_at <= ?" (Only now)
+  void $ execute conn "DELETE FROM rsvp_sessions WHERE expires_at <= ?" (Only now)
 
 listInvitees :: Connection -> IO [Invitee]
 listInvitees conn = query_ conn
   "SELECT id, name, code, max_guests, notes, created_at::text FROM invitees ORDER BY name ASC"
+
+getInvitee :: Connection -> Int64 -> IO (Maybe Invitee)
+getInvitee conn iid = do
+  rows <- query conn
+    "SELECT id, name, code, max_guests, notes, created_at::text FROM invitees WHERE id = ? LIMIT 1"
+    (Only iid)
+  pure $ case rows of
+    []    -> Nothing
+    (i:_) -> Just i
+
+getInviteeByCode :: Connection -> Text -> IO (Maybe Invitee)
+getInviteeByCode conn code = do
+  rows <- query conn inviteeSelectByCode (Only code)
+  pure $ case rows of
+    []    -> Nothing
+    (i:_) -> Just i
+
+inviteeHasRsvp :: Connection -> Int64 -> IO Bool
+inviteeHasRsvp conn iid = do
+  rows :: [Only Int] <- query conn
+    "SELECT 1 FROM rsvps WHERE invitee_id = ? LIMIT 1"
+    (Only iid)
+  pure (not (null rows))
 
 createInvitee :: Connection -> InviteeInput -> IO Invitee
 createInvitee conn input = oneRow "createInvitee" =<< query conn
@@ -174,14 +223,15 @@ linkRsvpInvitee conn rid body = do
     []    -> Nothing
     (r:_) -> Just r
 
-insertVideo :: Connection -> SavedVideo -> IO Text
-insertVideo conn video = do
+insertVideo :: Connection -> Int64 -> SavedVideo -> IO Text
+insertVideo conn iid video = do
   rows :: [Only Text] <- query conn
-    "INSERT INTO videos (original_filename, stored_filename, content_type, size_bytes, submitter_name, message) VALUES (?, ?, ?, ?, ?, ?) RETURNING id::text"
+    "INSERT INTO videos (original_filename, stored_filename, content_type, size_bytes, invitee_id, submitter_name, message) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id::text"
     ( savedOriginalFilename video
     , savedStoredFilename video
     , savedContentType video
     , savedSizeBytes video
+    , iid
     , savedSubmitterName video
     , savedMessage video
     )
@@ -191,12 +241,12 @@ insertVideo conn video = do
 
 listVideos :: Connection -> IO [VideoAdmin]
 listVideos conn = query_ conn
-  "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, submitter_name, message, created_at::text FROM videos ORDER BY created_at DESC"
+  "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, invitee_id, submitter_name, message, created_at::text FROM videos ORDER BY created_at DESC"
 
 getVideo :: Connection -> Text -> IO (Maybe VideoAdmin)
 getVideo conn vid = do
   rows <- query conn
-    "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, submitter_name, message, created_at::text FROM videos WHERE id = ?::uuid"
+    "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, invitee_id, submitter_name, message, created_at::text FROM videos WHERE id = ?::uuid"
     (Only vid)
   pure $ case rows of
     []    -> Nothing

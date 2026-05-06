@@ -130,6 +130,14 @@ adminInviteeRow inviteeDyn = elAttr "article" ("class" =: "admin-row") $ do
     el "strong" $ dynText (inviteeName <$> inviteeDyn)
     el "p" $ dynText (inviteeMeta <$> inviteeDyn)
     el "p" $ dynText (maybe "" id . inviteeNotes <$> inviteeDyn)
+    dyn_ $ ffor inviteeDyn $ \invitee -> case inviteeCode invitee of
+      Nothing -> blank
+      Just code -> el "p" $
+        elAttr "a" ("class" =: "admin-link small" <> "href" =: inviteeUrl code <> "target" =: "_blank" <> "rel" =: "noopener noreferrer") $
+          text "Abrir liga RSVP"
+  dyn_ $ ffor inviteeDyn $ \invitee -> case inviteeCode invitee of
+    Nothing -> blank
+    Just _  -> elAttr "img" (inviteeQrAttrs invitee) blank
   (btnEl, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
   pure (fromIntegral . inviteeId <$> current inviteeDyn `tag` domEvent Click btnEl)
 
@@ -221,6 +229,15 @@ emptyToMaybe value = let stripped = T.strip value in if T.null stripped then Not
 inviteeMeta :: Invitee -> Text
 inviteeMeta i = maybe "sin codigo" id (inviteeCode i) <> " - max " <> T.pack (show (inviteeMaxGuests i)) <> " asistentes"
 
+inviteeUrl :: Text -> Text
+inviteeUrl code = "/?code=" <> code <> "#rsvp"
+
+inviteeQrAttrs :: Invitee -> Map Text Text
+inviteeQrAttrs invitee =
+  "class" =: "admin-qr"
+  <> "src" =: ("/api/admin/invitees/" <> T.pack (show (inviteeId invitee)) <> "/qr")
+  <> "alt" =: ("QR RSVP " <> inviteeName invitee)
+
 statusLabel :: AttendanceStatus -> Text
 statusLabel Attending = "attending"
 statusLabel Declined  = "declined"
@@ -262,6 +279,7 @@ adminCSS = T.unlines
   , ".admin-btn:hover, .admin-link:hover { background: rgba(212,180,131,.22); }"
   , ".admin-btn.ghost { background: transparent; border-color: rgba(255,255,255,.26); }"
   , ".admin-btn.small { padding: .48rem .8rem; font-size: .78rem; }"
+  , ".admin-link.small { padding: .4rem .68rem; font-size: .72rem; margin-top: .25rem; }"
   , ".admin-actions { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: flex-end; }"
   , ".admin-tabs { max-width: 1160px; margin: 0 auto 1.2rem; display: flex; gap: .55rem; flex-wrap: wrap; }"
   , ".admin-tabs button { border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: rgba(255,255,255,.72); border-radius: 999px; padding: .55rem .9rem; cursor: pointer; font-family: 'Courier Prime', monospace; }"
@@ -274,6 +292,7 @@ adminCSS = T.unlines
   , ".admin-row { display: flex; justify-content: space-between; gap: .8rem; align-items: center; padding: .8rem; border: 1px solid rgba(255,255,255,.10); border-radius: 14px; background: rgba(0,0,0,.14); }"
   , ".admin-row strong { color: #fff; font-weight: 400; }"
   , ".admin-row p { margin-top: .25rem; color: rgba(255,255,255,.65); font-size: .82rem; line-height: 1.45; }"
+  , ".admin-qr { width: 96px; height: 96px; padding: .35rem; background: rgba(255,255,255,.94); border-radius: 10px; object-fit: contain; }"
   , ".admin-danger { border: 1px solid rgba(255,120,105,.45); color: #ffd7d1; background: rgba(255,120,105,.10); border-radius: 999px; padding: .46rem .72rem; cursor: pointer; }"
   , ".admin-error { color: #ffb4a8; min-height: 1.2rem; margin-top: .8rem; }"
   , "@media (max-width: 760px) { .admin-top { align-items: flex-start; flex-direction: column; } .admin-actions { justify-content: flex-start; } .admin-grid { grid-template-columns: 1fr; } .admin-row { align-items: flex-start; flex-direction: column; } }"

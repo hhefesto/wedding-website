@@ -53,6 +53,12 @@ in {
       default     = false;
       description = "Whether to mark the admin session cookie as Secure.";
     };
+
+    publicBaseUrl = lib.mkOption {
+      type        = lib.types.str;
+      default     = "http://wedding.local";
+      description = "Public URL used when generating invitee RSVP QR codes.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -92,6 +98,8 @@ in {
         WEDDING_VIDEO_DIR = cfg.videoDir;
         WEDDING_VIDEO_MAX_BYTES = toString cfg.videoMaxBytes;
         WEDDING_COOKIE_SECURE = if cfg.cookieSecure then "true" else "false";
+        WEDDING_QRENCODE_BIN = "${pkgs.qrencode}/bin/qrencode";
+        WEDDING_PUBLIC_BASE_URL = cfg.publicBaseUrl;
       } // lib.optionalAttrs (cfg.databaseUrlFile == null) {
         DATABASE_URL = cfg.databaseUrl;
       } // lib.optionalAttrs (cfg.adminPasswordHashFile != null) {

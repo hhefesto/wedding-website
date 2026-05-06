@@ -3,6 +3,7 @@ module Main where
 import           Control.Concurrent       (forkIO, threadDelay)
 import           Control.Concurrent.MVar  (newMVar)
 import           Control.Monad            (forever)
+import           Data.String              (fromString)
 import qualified Network.Wai.Handler.Warp as Warp
 import           System.Environment       (lookupEnv)
 
@@ -18,6 +19,8 @@ main = do
   videoDir <- maybe "/var/lib/wedding/videos" id <$> lookupEnv "WEDDING_VIDEO_DIR"
   videoMaxBytes <- maybe (200 * 1024 * 1024) read <$> lookupEnv "WEDDING_VIDEO_MAX_BYTES"
   cookieSecure <- maybe False parseBool <$> lookupEnv "WEDDING_COOKIE_SECURE"
+  qrencodeBin <- maybe "qrencode" id <$> lookupEnv "WEDDING_QRENCODE_BIN"
+  publicBaseUrl <- maybe "http://wedding.local" id <$> lookupEnv "WEDDING_PUBLIC_BASE_URL"
   connVar <- newMVar conn
   _ <- forkIO $ forever $ do
     threadDelay (3600 * 1000000)
@@ -27,6 +30,8 @@ main = do
         , appVideoDir          = videoDir
         , appVideoMaxBytes     = videoMaxBytes
         , appCookieSecure      = cookieSecure
+        , appQrencodeBin       = qrencodeBin
+        , appPublicBaseUrl     = fromString publicBaseUrl
         }
   putStrLn $ "wedding-backend listening on port " <> show port
   Warp.run port (app cfg connVar)

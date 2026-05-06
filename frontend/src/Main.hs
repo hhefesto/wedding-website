@@ -112,7 +112,7 @@ navHighlightingJS =
 
 videoUploadShimJS :: String
 videoUploadShimJS =
-  "(function(){function start(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.ready)return;f.dataset.ready='1';var s=document.getElementById('video-upload-status');var b=document.getElementById('video-upload-submit');function set(m,e){s.textContent=m||'';s.classList.toggle('is-error',!!e);}f.addEventListener('submit',function(ev){ev.preventDefault();var file=document.getElementById('video-upload-file').files[0];if(!file){set('Elige un video primero.',true);return;}var d=new FormData(f);b.disabled=true;set('Subiendo...',false);fetch('/api/videos',{method:'POST',body:d}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(){f.reset();set('Video recibido. Gracias.',false);}).catch(function(){set('No se pudo subir. Intenta con un video mas pequeno.',true);}).finally(function(){b.disabled=false;});});}start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
+  "(function(){function code(){var p=new URLSearchParams(location.search||'');var c=p.get('code')||'';try{if(c)localStorage.setItem('weddingInvitationCode',c);else c=localStorage.getItem('weddingInvitationCode')||'';}catch(e){}return c;}function rsvpLogin(){var c=code();if(!c||window.__weddingRsvpLoginTried)return;window.__weddingRsvpLoginTried=1;fetch('/api/rsvp/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).catch(function(){});}function start(){var i=document.getElementById('rsvp-invitation-code');if(i&&!i.value)i.value=code();var f=document.getElementById('video-upload-form');if(!f||f.dataset.ready)return;f.dataset.ready='1';var s=document.getElementById('video-upload-status');var b=document.getElementById('video-upload-submit');function set(m,e){s.textContent=m||'';s.classList.toggle('is-error',!!e);}f.addEventListener('submit',function(ev){ev.preventDefault();var file=document.getElementById('video-upload-file').files[0];if(!file){set('Elige un video primero.',true);return;}b.disabled=true;fetch('/api/rsvp/me',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('no rsvp');var d=new FormData(f);set('Subiendo...',false);return fetch('/api/videos',{method:'POST',body:d,credentials:'same-origin'});}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(){f.reset();set('Video recibido. Gracias.',false);}).catch(function(){set('Confirma tu RSVP con tu codigo de invitacion antes de subir video.',true);}).finally(function(){b.disabled=false;});});}rsvpLogin();start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
 
 fixedNav :: DomBuilder t m => m ()
 fixedNav =
@@ -155,6 +155,7 @@ ubicacionSection =
         el "p" $ text "Gran Terraza"
         el "p" $ text "Vista Real Country Club"
         el "p" $ text "6 pm"
+        qrBlock "https://www.google.com/maps/search/?api=1&query=20.5229282,-100.4039031" "qr-location.png" "Abrir ubicaci\243n"
         elAttr "iframe"
           ( "class"          =: "map-embed"
          <> "src"            =: "https://maps.google.com/maps?q=20.5229282,-100.4039031&z=17&output=embed&hl=es"
@@ -228,7 +229,8 @@ rsvpOverlay openE = mdo
           elAttr "p" ("class" =: "rsvp-step-label") $ text "Ingresa tu c\243digo de invitaci\243n"
           ti <- inputElement $ def
             & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
-              (  "type"        =: "text"
+               (  "type"        =: "text"
+              <> "id"          =: "rsvp-invitation-code"
               <> "class"       =: "rsvp-input"
               <> "placeholder" =: "Ej. FAMILIA123"
               <> "autocomplete" =: "off"
@@ -399,12 +401,29 @@ hCard name number mLink =
     case mLink of
       Nothing  -> blank
       Just url ->
-        elAttr "a"
-          ( "class" =: "rsvp-btn registry-link-btn"
-         <> "href" =: url
-         <> "target" =: "_blank"
-         <> "rel" =: "noopener noreferrer"
-          ) $ text "Ver mesa de regalos"
+        qrBlock url "qr-registry.png" "Ver mesa de regalos"
+
+qrBlock :: DomBuilder t m => Text -> Text -> Text -> m ()
+qrBlock url image label =
+  elAttr "div" ("class" =: "qr-block") $ do
+    elAttr "a"
+      ( "class" =: "rsvp-btn registry-link-btn"
+     <> "href" =: url
+     <> "target" =: "_blank"
+     <> "rel" =: "noopener noreferrer"
+      ) $ text label
+    elAttr "a"
+      ( "href" =: url
+     <> "target" =: "_blank"
+     <> "rel" =: "noopener noreferrer"
+     <> "aria-label" =: label
+      ) $
+      elAttr "img"
+        ( "class" =: "qr-img"
+       <> "src" =: image
+       <> "alt" =: "QR"
+       <> "loading" =: "lazy"
+        ) blank
 
 -- ── VIDEO PARA LOS NOVIOS ─────────────────────────────────────────────────────
 
@@ -454,6 +473,8 @@ videoUploadOverlay openE = mdo
         ) $ text "\215"
       elAttr "p" ("class" =: "construction-kicker") $ text "VIDEO"
       elAttr "h3" ("class" =: "construction-title") $ text "Sube tu mensaje"
+      elAttr "p" ("class" =: "construction-copy") $
+        text "Disponible para invitados que ya confirmaron con su c\243digo."
       elAttr "form" ("id" =: "video-upload-form" <> "class" =: "video-upload-form") $ do
         elAttr "input"
           ( "id" =: "video-upload-name"
@@ -919,6 +940,7 @@ siteCSS = T.unlines
   , "  margin-top: 1rem;"
   , "  opacity: .88;"
   , "}"
+  , ".ubicacion-card .qr-block { margin-top: .65rem; }"
   , ""
 
   -- ── Dress code ────────────────────────────────────────────────────────────
@@ -1168,6 +1190,8 @@ siteCSS = T.unlines
   , "  font-size: clamp(1.06rem, .83vw, 1.2rem);"
   , "  padding: .44rem 1.05rem;"
   , "}"
+  , ".qr-block { display: grid; justify-items: center; gap: .8rem; }"
+  , ".qr-img { width: min(132px, 42vw); height: auto; padding: .45rem; border-radius: 12px; background: rgba(255,255,255,.92); box-shadow: 0 10px 32px rgba(0,0,0,.28); }"
   , "@media (max-width: 640px) {"
   , "  .h-track {"
   , "    flex-direction: column;"

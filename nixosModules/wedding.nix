@@ -84,6 +84,9 @@ in
         enable = true;
         port = ports.backend;
         package = packages.backend;
+        publicBaseUrl = if tlsCfg.forceSSL || tlsCfg.enableACME
+          then "https://${serverName}"
+          else "http://${serverName}";
       } // lib.optionalAttrs (databaseUrlFile != null) {
         databaseUrlFile = databaseUrlFile;
       } // lib.optionalAttrs (adminPasswordHashFile != null) {

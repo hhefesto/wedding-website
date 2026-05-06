@@ -6,6 +6,7 @@ module Wedding.Types
   , Invitee (..)
   , InviteeInput (..)
   , LoginRequest (..)
+  , RsvpLoginRequest (..)
   , RsvpAdmin (..)
   , VideoAdmin (..)
   , LinkInviteeBody (..)
@@ -155,6 +156,16 @@ instance FromJSON LoginRequest where
 instance ToJSON LoginRequest where
   toJSON r = object ["password" .= loginPassword r]
 
+newtype RsvpLoginRequest = RsvpLoginRequest
+  { rsvpLoginCode :: Text
+  } deriving (Eq, Show, Generic)
+
+instance FromJSON RsvpLoginRequest where
+  parseJSON = withObject "RsvpLoginRequest" $ \o -> RsvpLoginRequest <$> o .: "code"
+
+instance ToJSON RsvpLoginRequest where
+  toJSON r = object ["code" .= rsvpLoginCode r]
+
 data RsvpAdmin = RsvpAdmin
   { raId                 :: Text
   , raName               :: Text
@@ -206,6 +217,7 @@ data VideoAdmin = VideoAdmin
   , vaStoredFilename   :: Text
   , vaContentType      :: Text
   , vaSizeBytes        :: Int64
+  , vaInviteeId        :: Maybe Int64
   , vaSubmitterName    :: Maybe Text
   , vaMessage          :: Maybe Text
   , vaCreatedAt        :: Text
@@ -218,6 +230,7 @@ instance ToJSON VideoAdmin where
     , "storedFilename"   .= vaStoredFilename v
     , "contentType"      .= vaContentType v
     , "sizeBytes"        .= vaSizeBytes v
+    , "inviteeId"        .= vaInviteeId v
     , "submitterName"    .= vaSubmitterName v
     , "message"          .= vaMessage v
     , "createdAt"        .= vaCreatedAt v
@@ -231,6 +244,7 @@ instance FromJSON VideoAdmin where
       <*> o .:  "storedFilename"
       <*> o .:  "contentType"
       <*> o .:  "sizeBytes"
+      <*> o .:? "inviteeId"
       <*> o .:? "submitterName"
       <*> o .:? "message"
       <*> o .:  "createdAt"

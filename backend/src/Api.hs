@@ -14,6 +14,7 @@ import           Control.Monad.IO.Class     (liftIO)
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as LBC8
+import           Data.Char                  (isAlphaNum, ord)
 import           Data.Int                   (Int64)
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
@@ -22,15 +23,19 @@ import           Network.Wai                (Application)
 import           Servant
 import           Servant.Multipart          (MultipartData, MultipartForm, Tmp)
 import           System.Directory           (doesFileExist)
+import           System.Exit                (ExitCode (..))
 import           System.FilePath            ((</>))
-import           System.IO                  (hPutStrLn, stderr)
+import           System.IO                  (hClose, hPutStrLn, stderr)
+import           System.IO.Temp             (withSystemTempFile)
+import           System.Process             (readProcessWithExitCode)
 
 import           Auth                       (generateToken, verifyPassword)
 import qualified Db
 import           Upload                     (saveVideoUpload)
-import           Wedding.Types              (InviteLookup, Invitee, InviteeInput,
+import           Wedding.Types              (InviteLookup, Invitee (..), InviteeInput,
                                              LinkInviteeBody, LoginRequest (..),
-                                             RsvpAdmin, RsvpRequest,
+                                             RsvpLoginRequest (..),
+                                             RsvpAdmin, RsvpRequest (..),
                                              VideoAdmin (..),
                                              VideoSubmittedResponse (..))
 
@@ -39,6 +44,8 @@ data AppConfig = AppConfig
   , appVideoDir          :: FilePath
   , appVideoMaxBytes     :: Integer
   , appCookieSecure      :: Bool
+  , appQrencodeBin       :: FilePath
+  , appPublicBaseUrl     :: Text
   }
 
 type ConnVar = MVar Connection
@@ -49,8 +56,10 @@ type DownloadFile = Headers '[Header "Content-Disposition" Text] BL.ByteString
 type API =
        "api" :> "health" :> Get '[PlainText] String
   :<|> "api" :> "invite" :> QueryParam "code" Text :> Get '[JSON] InviteLookup
-  :<|> "api" :> "rsvp"   :> ReqBody '[JSON] RsvpRequest :> Post '[JSON] NoContent
-  :<|> "api" :> "videos" :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] VideoSubmittedResponse
+  :<|> "api" :> "rsvp"   :> ReqBody '[JSON] RsvpRequest :> Post '[JSON] (SetCookie NoContent)
+  :<|> "api" :> "rsvp" :> "login" :> ReqBody '[JSON] RsvpLoginRequest :> Post '[JSON] (SetCookie NoContent)
+  :<|> "api" :> "rsvp" :> "me" :> CookieHeader :> Get '[JSON] NoContent
+  :<|> "api" :> "videos" :> CookieHeader :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] VideoSubmittedResponse
   :<|> "api" :> "admin" :> "login" :> ReqBody '[JSON] LoginRequest :> Post '[JSON] (SetCookie NoContent)
   :<|> "api" :> "admin" :> "logout" :> CookieHeader :> Post '[JSON] (SetCookie NoContent)
   :<|> "api" :> "admin" :> "me" :> CookieHeader :> Get '[JSON] NoContent
@@ -58,6 +67,7 @@ type API =
   :<|> "api" :> "admin" :> "invitees" :> CookieHeader :> ReqBody '[JSON] InviteeInput :> Post '[JSON] Invitee
   :<|> "api" :> "admin" :> "invitees" :> Capture "id" Int64 :> CookieHeader :> ReqBody '[JSON] InviteeInput :> Put '[JSON] Invitee
   :<|> "api" :> "admin" :> "invitees" :> Capture "id" Int64 :> CookieHeader :> Delete '[JSON] NoContent
+  :<|> "api" :> "admin" :> "invitees" :> Capture "id" Int64 :> "qr" :> CookieHeader :> Get '[OctetStream] DownloadFile
   :<|> "api" :> "admin" :> "rsvps" :> CookieHeader :> Get '[JSON] [RsvpAdmin]
   :<|> "api" :> "admin" :> "rsvps" :> Capture "id" Text :> "invitee" :> CookieHeader :> ReqBody '[JSON] LinkInviteeBody :> Put '[JSON] RsvpAdmin
   :<|> "api" :> "admin" :> "videos" :> CookieHeader :> Get '[JSON] [VideoAdmin]
@@ -71,6 +81,8 @@ server cfg var =
        healthH
   :<|> inviteH var
   :<|> rsvpH var
+  :<|> rsvpLoginH var
+  :<|> rsvpMeH var
   :<|> videoH cfg var
   :<|> loginH cfg var
   :<|> logoutH cfg var
@@ -79,6 +91,7 @@ server cfg var =
   :<|> createInviteeH var
   :<|> updateInviteeH var
   :<|> deleteInviteeH var
+  :<|> inviteeQrH cfg var
   :<|> listRsvpsH var
   :<|> linkRsvpInviteeH var
   :<|> listVideosH var
@@ -93,20 +106,41 @@ inviteH var mCode = do
   mInvite <- withDb var (`Db.lookupInvite` code)
   maybe (throwError err404 { errBody = "\"Invitation not found\"" }) pure mInvite
 
-rsvpH :: ConnVar -> RsvpRequest -> Handler NoContent
+rsvpH :: ConnVar -> RsvpRequest -> Handler (SetCookie NoContent)
 rsvpH var r = do
   result <- withDb var (`Db.submitRsvpRequest` r)
   case result of
     Left msg -> throwError err400 { errBody = textBody msg }
-    Right () -> pure NoContent
+    Right invitee -> do
+      token <- liftIO generateToken
+      withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
+      pure (addHeader (rsvpSessionCookie token) NoContent)
 
-videoH :: AppConfig -> ConnVar -> MultipartData Tmp -> Handler VideoSubmittedResponse
-videoH cfg var multipart = do
+rsvpLoginH :: ConnVar -> RsvpLoginRequest -> Handler (SetCookie NoContent)
+rsvpLoginH var req = do
+  mInvitee <- withDb var (`Db.getInviteeByCode` rsvpLoginCode req)
+  invitee <- maybe (throwError err401) pure mInvitee
+  hasRsvp <- withDb var (\conn -> Db.inviteeHasRsvp conn (inviteeId invitee))
+  if not hasRsvp
+    then throwError err401
+    else do
+      token <- liftIO generateToken
+      withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
+      pure (addHeader (rsvpSessionCookie token) NoContent)
+
+rsvpMeH :: ConnVar -> Maybe Text -> Handler NoContent
+rsvpMeH var mCookie = do
+  _ <- requireRsvp var mCookie
+  pure NoContent
+
+videoH :: AppConfig -> ConnVar -> Maybe Text -> MultipartData Tmp -> Handler VideoSubmittedResponse
+videoH cfg var mCookie multipart = do
+  invitee <- requireRsvp var mCookie
   saved <- liftIO $ saveVideoUpload (appVideoDir cfg) (appVideoMaxBytes cfg) multipart
   case saved of
     Left msg -> throwError err400 { errBody = textBody msg }
     Right video -> do
-      vid <- withDb var (`Db.insertVideo` video)
+      vid <- withDb var (\conn -> Db.insertVideo conn (inviteeId invitee) video)
       pure (VideoSubmittedResponse vid)
 
 loginH :: AppConfig -> ConnVar -> LoginRequest -> Handler (SetCookie NoContent)
@@ -120,7 +154,7 @@ loginH cfg var req =
 
 logoutH :: AppConfig -> ConnVar -> Maybe Text -> Handler (SetCookie NoContent)
 logoutH cfg var mCookie = do
-  case extractSessionToken mCookie of
+  case extractCookie adminCookieName mCookie of
     Nothing    -> pure ()
     Just token -> withDb var (`Db.deleteSession` token)
   pure (addHeader (clearSessionCookie (appCookieSecure cfg)) NoContent)
@@ -151,6 +185,15 @@ deleteInviteeH var iid mCookie = do
   requireAdmin var mCookie
   withDb var (`Db.deleteInvitee` iid)
   pure NoContent
+
+inviteeQrH :: AppConfig -> ConnVar -> Int64 -> Maybe Text -> Handler DownloadFile
+inviteeQrH cfg var iid mCookie = do
+  requireAdmin var mCookie
+  mInvitee <- withDb var (`Db.getInvitee` iid)
+  invitee <- maybe (throwError err404) pure mInvitee
+  code <- maybe (throwError err404) pure (inviteeCode invitee >>= nonEmpty)
+  bytes <- liftIO $ qrPng (appQrencodeBin cfg) (inviteeUrl cfg code)
+  pure (addHeader "inline; filename=invitee-rsvp-qr.png" bytes)
 
 listRsvpsH :: ConnVar -> Maybe Text -> Handler [RsvpAdmin]
 listRsvpsH var mCookie = do
@@ -192,34 +235,52 @@ withDb var action = do
 
 requireAdmin :: ConnVar -> Maybe Text -> Handler ()
 requireAdmin var mCookie =
-  case extractSessionToken mCookie of
+  case extractCookie adminCookieName mCookie of
     Nothing -> throwError err401
     Just token -> do
       valid <- withDb var (`Db.lookupSession` token)
       if valid then pure () else throwError err401
 
-extractSessionToken :: Maybe Text -> Maybe Text
-extractSessionToken mCookie = do
+requireRsvp :: ConnVar -> Maybe Text -> Handler Invitee
+requireRsvp var mCookie =
+  case extractCookie rsvpCookieName mCookie of
+    Nothing -> throwError err401
+    Just token -> do
+      mInvitee <- withDb var (`Db.lookupRsvpSession` token)
+      maybe (throwError err401) pure mInvitee
+
+extractCookie :: Text -> Maybe Text -> Maybe Text
+extractCookie name mCookie = do
   cookie <- mCookie
   let parts = T.splitOn ";" cookie
       keyValue part =
         let (key, rest) = T.breakOn "=" (T.strip part)
          in (key, T.drop 1 rest)
-  lookup cookieName (map keyValue parts) >>= nonEmpty
+  lookup name (map keyValue parts) >>= nonEmpty
 
 sessionCookie :: Bool -> Text -> Text
 sessionCookie secure token =
-  cookieName <> "=" <> token <> "; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400" <> secureAttr secure
+  adminCookieName <> "=" <> token <> "; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400" <> secureAttr secure
+
+rsvpSessionCookie :: Text -> Text
+rsvpSessionCookie token =
+  rsvpCookieName <> "=" <> token <> "; Path=/; HttpOnly; SameSite=Lax; Max-Age=15552000"
+
+clearNoopCookie :: Text
+clearNoopCookie = "wedding_rsvp_noop=1; Path=/; Max-Age=0"
 
 clearSessionCookie :: Bool -> Text
 clearSessionCookie secure =
-  cookieName <> "=deleted; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT" <> secureAttr secure
+  adminCookieName <> "=deleted; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT" <> secureAttr secure
 
 secureAttr :: Bool -> Text
 secureAttr secure = if secure then "; Secure" else ""
 
-cookieName :: Text
-cookieName = "wedding_admin"
+adminCookieName :: Text
+adminCookieName = "wedding_admin"
+
+rsvpCookieName :: Text
+rsvpCookieName = "wedding_rsvp"
 
 textBody :: Text -> LBC8.ByteString
 textBody = LBC8.pack . T.unpack
@@ -236,6 +297,27 @@ nonEmpty :: Text -> Maybe Text
 nonEmpty value =
   let stripped = T.strip value
    in if T.null stripped then Nothing else Just stripped
+
+inviteeUrl :: AppConfig -> Text -> Text
+inviteeUrl cfg code = appPublicBaseUrl cfg <> "/?code=" <> urlEncode code <> "#rsvp"
+
+urlEncode :: Text -> Text
+urlEncode = T.concatMap encodeChar
+  where
+    encodeChar c
+      | isAlphaNum c || c `elem` ("-_.~" :: String) = T.singleton c
+      | otherwise = T.pack ['%', hex (ord c `div` 16), hex (ord c `mod` 16)]
+    hex n = "0123456789ABCDEF" !! n
+
+qrPng :: FilePath -> Text -> IO BL.ByteString
+qrPng qrencode value = withSystemTempFile "wedding-invitee-qr.png" $ \path handle -> do
+  hClose handle
+  (code, _out, err) <- readProcessWithExitCode qrencode
+    ["-t", "PNG", "-s", "6", "-m", "2", "-o", path, T.unpack value]
+    ""
+  case code of
+    ExitSuccess   -> BL.readFile path
+    ExitFailure _ -> fail ("qrencode failed: " <> err)
 
 app :: AppConfig -> ConnVar -> Application
 app cfg var = serve api (server cfg var)
