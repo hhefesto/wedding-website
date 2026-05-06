@@ -38,6 +38,11 @@
 }:
 { config, lib, pkgs, ... }:
 let
+  missingPackageAttrs = builtins.filter (name: !(builtins.hasAttr name packages)) [
+    "backend"
+    "staticRoot"
+    "adminStaticRoot"
+  ];
   tlsCfg = {
     enableACME = false;
     forceSSL = false;
@@ -57,6 +62,13 @@ in
 
   config = lib.mkMerge [
     {
+      assertions = [
+        {
+          assertion = missingPackageAttrs == [];
+          message = "wedding.nix packages is missing required attribute(s): ${lib.concatStringsSep ", " missingPackageAttrs}";
+        }
+      ];
+
       services.nginx.recommendedGzipSettings = lib.mkForce recommendedGzipSettings;
 
       services.wedding.database = {

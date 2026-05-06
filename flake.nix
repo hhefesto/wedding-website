@@ -186,6 +186,35 @@
           done
           mkdir -p "$out"
         '';
+
+        # Ensures the reusable NixOS module interface stays in sync with the
+        # package set it expects from downstream flakes.
+        checks.wedding-module-interface =
+          let
+            cfg = inputs.nixpkgs.lib.nixosSystem {
+              inherit system;
+              modules = [
+                (import ./nixosModules/wedding.nix {
+                  ports = { nginx = 8084; backend = 3001; database = 5432; };
+                  databaseName = "wedding-test";
+                  serverName = "wedding.local";
+                  packages = {
+                    backend = self'.packages.wedding-backend;
+                    staticRoot = self'.packages.website;
+                    adminStaticRoot = self'.packages.admin-website;
+                  };
+                  localPostgresTrust = true;
+                  recommendedGzipSettings = false;
+                })
+              ];
+            };
+          in pkgs.runCommand "check-wedding-module-interface" {} ''
+            test "${toString cfg.config.services.wedding.frontend.staticRoot}" = "${self'.packages.website}"
+            test "${toString cfg.config.services.wedding.frontend.adminStaticRoot}" = "${self'.packages.admin-website}"
+            test "${cfg.config.services.nginx.virtualHosts."wedding.local".locations."/api/".proxyPass}" = "http://127.0.0.1:3001"
+            test "${toString cfg.config.services.nginx.virtualHosts."wedding.local".locations."/admin/".alias}" = "${self'.packages.admin-website}/"
+            mkdir -p "$out"
+          '';
       };
     };
 }
