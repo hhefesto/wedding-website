@@ -116,7 +116,7 @@
           rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
             ${ghcjsBuild}/bin/wedding-admin-frontend.jsexe/ "$out/"
 
-          install -m644 ${./index.html} "$out/index.html"
+          install -m644 ${./admin-index.html} "$out/index.html"
         '';
       in {
         # ── Packages ────────────────────────────────────────────────────────
@@ -213,6 +213,7 @@
             test "${toString cfg.config.services.wedding.frontend.adminStaticRoot}" = "${self'.packages.admin-website}"
             test "${cfg.config.services.nginx.virtualHosts."wedding.local".locations."/api/".proxyPass}" = "http://127.0.0.1:3001"
             test "${toString cfg.config.services.nginx.virtualHosts."wedding.local".locations."/admin/".alias}" = "${self'.packages.admin-website}/"
+            test "${cfg.config.services.nginx.virtualHosts."wedding.local".locations."= /admin".return}" = "302 /admin/"
             mkdir -p "$out"
           '';
       };

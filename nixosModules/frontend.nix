@@ -54,6 +54,10 @@ in {
         '';
 
         locations = {
+          "= /admin" = {
+            return = "302 /admin/";
+          };
+
           "/" = {
             tryFiles = "$uri $uri/ /index.html";
           };
