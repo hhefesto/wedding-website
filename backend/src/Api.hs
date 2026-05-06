@@ -28,7 +28,7 @@ import           System.IO                  (hPutStrLn, stderr)
 import           Auth                       (generateToken, verifyPassword)
 import qualified Db
 import           Upload                     (saveVideoUpload)
-import           Wedding.Types              (Invitee, InviteeInput,
+import           Wedding.Types              (InviteLookup, Invitee, InviteeInput,
                                              LinkInviteeBody, LoginRequest (..),
                                              RsvpAdmin, RsvpRequest,
                                              VideoAdmin (..),
@@ -48,6 +48,7 @@ type DownloadFile = Headers '[Header "Content-Disposition" Text] BL.ByteString
 
 type API =
        "api" :> "health" :> Get '[PlainText] String
+  :<|> "api" :> "invite" :> QueryParam "code" Text :> Get '[JSON] InviteLookup
   :<|> "api" :> "rsvp"   :> ReqBody '[JSON] RsvpRequest :> Post '[JSON] NoContent
   :<|> "api" :> "videos" :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] VideoSubmittedResponse
   :<|> "api" :> "admin" :> "login" :> ReqBody '[JSON] LoginRequest :> Post '[JSON] (SetCookie NoContent)
@@ -68,6 +69,7 @@ api = Proxy
 server :: AppConfig -> ConnVar -> Server API
 server cfg var =
        healthH
+  :<|> inviteH var
   :<|> rsvpH var
   :<|> videoH cfg var
   :<|> loginH cfg var
@@ -85,10 +87,18 @@ server cfg var =
 healthH :: Handler String
 healthH = pure "ok"
 
+inviteH :: ConnVar -> Maybe Text -> Handler InviteLookup
+inviteH var mCode = do
+  code <- maybe (throwError err400 { errBody = "\"Missing invitation code\"" }) pure mCode
+  mInvite <- withDb var (`Db.lookupInvite` code)
+  maybe (throwError err404 { errBody = "\"Invitation not found\"" }) pure mInvite
+
 rsvpH :: ConnVar -> RsvpRequest -> Handler NoContent
 rsvpH var r = do
-  withDb var (`Db.insertRsvpRequest` r)
-  pure NoContent
+  result <- withDb var (`Db.submitRsvpRequest` r)
+  case result of
+    Left msg -> throwError err400 { errBody = textBody msg }
+    Right () -> pure NoContent
 
 videoH :: AppConfig -> ConnVar -> MultipartData Tmp -> Handler VideoSubmittedResponse
 videoH cfg var multipart = do

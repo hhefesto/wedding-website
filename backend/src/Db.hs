@@ -1,7 +1,7 @@
 module Db
   ( initDb
-  , insertRsvp
-  , insertRsvpRequest
+  , lookupInvite
+  , submitRsvpRequest
   , insertSession
   , lookupSession
   , deleteSession
@@ -27,16 +27,25 @@ import           Database.PostgreSQL.Simple
 import           Database.PostgreSQL.Simple.FromRow
 import           System.Environment         (lookupEnv)
 import           Upload                     (SavedVideo (..))
-import           Wedding.Types              (Invitee (..), InviteeInput (..),
-                                             LinkInviteeBody (..), Rsvp (..),
-                                             RsvpAdmin (..), RsvpRequest (..),
-                                             VideoAdmin (..))
+import           Wedding.Types              (AttendanceStatus (..), InviteLookup (..),
+                                             Invitee (..), InviteeInput (..),
+                                             LinkInviteeBody (..), RsvpAdmin (..),
+                                             RsvpRequest (..), VideoAdmin (..))
 
 instance FromRow Invitee where
   fromRow = Invitee <$> field <*> field <*> field <*> field <*> field <*> field
 
 instance FromRow RsvpAdmin where
-  fromRow = RsvpAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = do
+    rid <- field
+    rname <- field
+    status <- statusFromText <$> field
+    count <- field
+    rdietary <- field
+    rinvitee <- field
+    code <- field
+    created <- field
+    pure (RsvpAdmin rid rname status count rdietary rinvitee code created)
 
 instance FromRow VideoAdmin where
   fromRow = VideoAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
@@ -47,37 +56,63 @@ initDb = do
   let connStr = maybe "postgres://localhost/wedding" id mUrl
   connectPostgreSQL (BC8.pack connStr)
 
-insertRsvp :: Connection -> Rsvp -> IO ()
-insertRsvp conn r =
-  insertRsvpRequest conn RsvpRequest
-    { rrName           = name r
-    , rrGuestCount     = guestCount r
-    , rrDietary        = dietary r
-    , rrInvitationCode = Nothing
-    }
+lookupInvite :: Connection -> Text -> IO (Maybe InviteLookup)
+lookupInvite conn rawCode =
+  case nonEmpty rawCode of
+    Nothing -> pure Nothing
+    Just code -> do
+      rows <- query conn
+        "SELECT i.name, i.max_guests, r.status, r.guest_count FROM invitees i LEFT JOIN rsvps r ON r.invitee_id = i.id WHERE i.code = ? LIMIT 1"
+        (Only code)
+      pure $ case rows of
+        [] -> Nothing
+        ((iname, maxGuests, mStatus, mCount):_) -> Just InviteLookup
+          { ilName       = iname
+          , ilMaxGuests  = maxGuests
+          , ilHasRsvp    = maybe False (const True) (mStatus :: Maybe Text)
+          , ilStatus     = statusFromText <$> mStatus
+          , ilGuestCount = mCount
+          }
 
-insertRsvpRequest :: Connection -> RsvpRequest -> IO ()
-insertRsvpRequest conn r = do
-  mInvitee <- findInvitee conn (rrName r) (rrInvitationCode r)
-  let dietaryColumn = nonEmpty (rrDietary r)
-      inviteeIdColumn = fmap inviteeId mInvitee
-      codeColumn = rrInvitationCode r >>= nonEmpty
-  void $ execute conn
-    "INSERT INTO rsvps (name, guest_count, dietary, invitee_id, invitation_code_used) VALUES (?, ?, ?, ?, ?)"
-    (rrName r, rrGuestCount r, dietaryColumn, inviteeIdColumn, codeColumn)
+submitRsvpRequest :: Connection -> RsvpRequest -> IO (Either Text ())
+submitRsvpRequest conn r = do
+  case nonEmpty (rrInvitationCode r) of
+    Nothing -> pure (Left "El codigo de invitacion es obligatorio.")
+    Just code -> do
+      mInvitee <- findInviteeByCode conn code
+      case mInvitee of
+        Nothing -> pure (Left "No encontramos esa invitacion.")
+        Just invitee ->
+          case validateRsvp invitee r of
+            Left msg -> pure (Left msg)
+            Right count -> do
+              void $ execute conn
+                "INSERT INTO rsvps (name, status, guest_count, dietary, invitee_id, invitation_code_used, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW()) ON CONFLICT (invitee_id) WHERE invitee_id IS NOT NULL DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, guest_count = EXCLUDED.guest_count, dietary = EXCLUDED.dietary, invitation_code_used = EXCLUDED.invitation_code_used, updated_at = NOW()"
+                ( inviteeName invitee
+                , statusToText (rrStatus r)
+                , count
+                , nonEmpty (rrDietary r)
+                , inviteeId invitee
+                , Just code
+                )
+              pure (Right ())
 
-findInvitee :: Connection -> Text -> Maybe Text -> IO (Maybe Invitee)
-findInvitee conn rsvpName mCode = do
-  byCode <- case mCode >>= nonEmpty of
-    Nothing   -> pure []
-    Just code -> query conn inviteeSelectByCode (Only code)
-  case byCode of
-    (i:_) -> pure (Just i)
-    []    -> do
-      byName <- query conn inviteeSelectByName (Only rsvpName)
-      pure $ case byName of
-        []    -> Nothing
-        (i:_) -> Just i
+findInviteeByCode :: Connection -> Text -> IO (Maybe Invitee)
+findInviteeByCode conn code = do
+  rows <- query conn inviteeSelectByCode (Only code)
+  pure $ case rows of
+    []    -> Nothing
+    (i:_) -> Just i
+
+validateRsvp :: Invitee -> RsvpRequest -> Either Text Int
+validateRsvp invitee r =
+  case rrStatus r of
+    Declined -> Right 0
+    Attending
+      | rrGuestCount r < 1 -> Left "Confirma al menos un asistente o marca que no podras asistir."
+      | rrGuestCount r > inviteeMaxGuests invitee ->
+          Left ("Tu invitacion permite hasta " <> T.pack (show (inviteeMaxGuests invitee)) <> " asistentes.")
+      | otherwise -> Right (rrGuestCount r)
 
 insertSession :: Connection -> Text -> IO ()
 insertSession conn token = do
@@ -128,12 +163,12 @@ deleteInvitee conn iid =
 
 listRsvps :: Connection -> IO [RsvpAdmin]
 listRsvps conn = query_ conn
-  "SELECT id::text, name, guest_count, dietary, invitee_id, invitation_code_used, created_at::text FROM rsvps ORDER BY created_at DESC"
+  "SELECT id::text, name, status, guest_count, dietary, invitee_id, invitation_code_used, created_at::text FROM rsvps ORDER BY created_at DESC"
 
 linkRsvpInvitee :: Connection -> Text -> LinkInviteeBody -> IO (Maybe RsvpAdmin)
 linkRsvpInvitee conn rid body = do
   rows <- query conn
-    "UPDATE rsvps SET invitee_id = ? WHERE id = ?::uuid RETURNING id::text, name, guest_count, dietary, invitee_id, invitation_code_used, created_at::text"
+    "UPDATE rsvps SET invitee_id = ?, updated_at = NOW() WHERE id = ?::uuid RETURNING id::text, name, status, guest_count, dietary, invitee_id, invitation_code_used, created_at::text"
     (linkInviteeId body, rid)
   pure $ case rows of
     []    -> Nothing
@@ -171,10 +206,6 @@ inviteeSelectByCode :: Query
 inviteeSelectByCode =
   "SELECT id, name, code, max_guests, notes, created_at::text FROM invitees WHERE code = ? LIMIT 1"
 
-inviteeSelectByName :: Query
-inviteeSelectByName =
-  "SELECT id, name, code, max_guests, notes, created_at::text FROM invitees WHERE LOWER(name) = LOWER(?) ORDER BY created_at ASC LIMIT 1"
-
 oneRow :: String -> [a] -> IO a
 oneRow label rows = case rows of
   []    -> fail (label <> ": no row returned")
@@ -184,3 +215,11 @@ nonEmpty :: Text -> Maybe Text
 nonEmpty value =
   let stripped = T.strip value
    in if T.null stripped then Nothing else Just stripped
+
+statusToText :: AttendanceStatus -> Text
+statusToText Attending = "attending"
+statusToText Declined  = "declined"
+
+statusFromText :: Text -> AttendanceStatus
+statusFromText "declined" = Declined
+statusFromText _          = Attending

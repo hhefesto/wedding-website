@@ -1,6 +1,8 @@
 module Wedding.Types
   ( Rsvp (..)
+  , AttendanceStatus (..)
   , RsvpRequest (..)
+  , InviteLookup (..)
   , Invitee (..)
   , InviteeInput (..)
   , LoginRequest (..)
@@ -11,7 +13,7 @@ module Wedding.Types
   ) where
 
 import           Data.Aeson   (FromJSON (..), ToJSON (..), object, withObject,
-                                (.:), (.:?), (.!=), (.=))
+                                withText, (.:), (.:?), (.!=), (.=))
 import           Data.Int     (Int64)
 import           Data.Text    (Text)
 import           GHC.Generics (Generic)
@@ -25,28 +27,71 @@ data Rsvp = Rsvp
 instance ToJSON Rsvp
 instance FromJSON Rsvp
 
+data AttendanceStatus = Attending | Declined
+  deriving (Eq, Show, Generic)
+
+instance ToJSON AttendanceStatus where
+  toJSON Attending = "attending"
+  toJSON Declined  = "declined"
+
+instance FromJSON AttendanceStatus where
+  parseJSON = withText "AttendanceStatus" $ \value ->
+    case value of
+      "attending" -> pure Attending
+      "declined"  -> pure Declined
+      _           -> fail "AttendanceStatus must be attending or declined"
+
 data RsvpRequest = RsvpRequest
-  { rrName           :: Text
+  { rrInvitationCode :: Text
+  , rrStatus         :: AttendanceStatus
   , rrGuestCount     :: Int
   , rrDietary        :: Text
-  , rrInvitationCode :: Maybe Text
+  , rrGuestNames     :: [Text]
   } deriving (Eq, Show, Generic)
 
 instance ToJSON RsvpRequest where
   toJSON r = object
-    [ "name"           .= rrName r
+    [ "invitationCode" .= rrInvitationCode r
+    , "status"         .= rrStatus r
     , "guestCount"     .= rrGuestCount r
     , "dietary"        .= rrDietary r
-    , "invitationCode" .= rrInvitationCode r
+    , "guestNames"     .= rrGuestNames r
     ]
 
 instance FromJSON RsvpRequest where
   parseJSON = withObject "RsvpRequest" $ \o ->
     RsvpRequest
-      <$> o .:  "name"
+      <$> o .:  "invitationCode"
+      <*> o .:  "status"
       <*> o .:  "guestCount"
       <*> o .:? "dietary" .!= ""
-      <*> o .:? "invitationCode"
+      <*> o .:? "guestNames" .!= []
+
+data InviteLookup = InviteLookup
+  { ilName       :: Text
+  , ilMaxGuests  :: Int
+  , ilHasRsvp    :: Bool
+  , ilStatus     :: Maybe AttendanceStatus
+  , ilGuestCount :: Maybe Int
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON InviteLookup where
+  toJSON i = object
+    [ "name"       .= ilName i
+    , "maxGuests"  .= ilMaxGuests i
+    , "hasRsvp"    .= ilHasRsvp i
+    , "status"     .= ilStatus i
+    , "guestCount" .= ilGuestCount i
+    ]
+
+instance FromJSON InviteLookup where
+  parseJSON = withObject "InviteLookup" $ \o ->
+    InviteLookup
+      <$> o .:  "name"
+      <*> o .:  "maxGuests"
+      <*> o .:  "hasRsvp"
+      <*> o .:? "status"
+      <*> o .:? "guestCount"
 
 data Invitee = Invitee
   { inviteeId        :: Int64
@@ -113,6 +158,7 @@ instance ToJSON LoginRequest where
 data RsvpAdmin = RsvpAdmin
   { raId                 :: Text
   , raName               :: Text
+  , raStatus             :: AttendanceStatus
   , raGuestCount         :: Int
   , raDietary            :: Maybe Text
   , raInviteeId          :: Maybe Int64
@@ -124,6 +170,7 @@ instance ToJSON RsvpAdmin where
   toJSON r = object
     [ "id"                 .= raId r
     , "name"               .= raName r
+    , "status"             .= raStatus r
     , "guestCount"         .= raGuestCount r
     , "dietary"            .= raDietary r
     , "inviteeId"          .= raInviteeId r
@@ -136,6 +183,7 @@ instance FromJSON RsvpAdmin where
     RsvpAdmin
       <$> o .:  "id"
       <*> o .:  "name"
+      <*> o .:  "status"
       <*> o .:  "guestCount"
       <*> o .:? "dietary"
       <*> o .:? "inviteeId"

@@ -6,11 +6,21 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.ByteString.Lazy as BL
-import Data.Aeson (encode)
+import Data.Aeson (FromJSON, ToJSON, decode, encode)
+import Data.Map (Map)
 import Control.Monad (forM_, void)
 import Language.Javascript.JSaddle (eval, MonadJSM, liftJSM)
 import Reflex.Dom
-import Wedding.Types (Rsvp (..))
+import Text.Read (readMaybe)
+import Wedding.Types
+  ( AttendanceStatus (..)
+  , Invitee (..)
+  , InviteeInput (..)
+  , LoginRequest (..)
+  , RsvpAdmin (..)
+  , RsvpRequest (..)
+  , VideoAdmin (..)
+  )
 
 -- ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -42,7 +52,7 @@ bodyW = do
   adminRoot
   videoUploadOverlay videoOpenE
   pb <- getPostBuild
-  performEvent_ $ liftJSM (void $ eval navHighlightingJS) <$ pb
+  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> videoUploadShimJS)) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -110,6 +120,10 @@ navHighlightingJS =
   <> "},{rootMargin:'-40% 0px -40% 0px',threshold:0});"
   <> "document.querySelectorAll('.image-section').forEach(function(s){obs.observe(s);});"
   <> "})()"
+
+videoUploadShimJS :: String
+videoUploadShimJS =
+  "(function(){function start(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.ready)return;f.dataset.ready='1';var s=document.getElementById('video-upload-status');var b=document.getElementById('video-upload-submit');function set(m,e){s.textContent=m||'';s.classList.toggle('is-error',!!e);}f.addEventListener('submit',function(ev){ev.preventDefault();var file=document.getElementById('video-upload-file').files[0];if(!file){set('Elige un video primero.',true);return;}var d=new FormData(f);b.disabled=true;set('Subiendo...',false);fetch('/api/videos',{method:'POST',body:d}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(){f.reset();set('Video recibido. Gracias.',false);}).catch(function(){set('No se pudo subir. Intenta con un video mas pequeno.',true);}).finally(function(){b.disabled=false;});});}start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
 
 fixedNav :: DomBuilder t m => m ()
 fixedNav =
@@ -192,17 +206,15 @@ rsvpSection =
      <> "loading" =: "lazy"
       ) blank
     elAttr "div" ("class" =: "section-overlay") $ do
-      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "RSVP"
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "R\233pondez s'il vous pla\238t"
       e <- elAttr "div" ("class" =: "glass rect rsvp-confirm" <> "data-reveal" =: "") $ do
-        el "p" $ text "Por favor confirma tu asistencia"
+        el "p" $ text "Por favor responde si podr\225s acompa\241arnos"
         el "p" $ text "antes del 10 de septiembre de 2026."
         (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Confirmar \8594"
         return (() <$ domEvent Click btnEl)
       return e
 
--- ── RSVP overlay — pure Reflex state machine ─────────────────────────────────
--- All 4 step divs stay in the DOM; stepDyn drives CSS show/hide so inputs
--- retain their values while hidden. WhatsApp href is built in pure Haskell.
+-- ── RSVP overlay — invitation-code response flow ─────────────────────────────
 
 rsvpOverlay :: MonadWidget t m => Event t () -> m ()
 rsvpOverlay openE = mdo
@@ -219,59 +231,67 @@ rsvpOverlay openE = mdo
   (closeE, nextE) <- elDynAttr "div" overlayAttrs $ do
     (closeBtnEl, _) <- elAttr' "button" ("class" =: "rsvp-close") $ text "\215"
 
-    (n1E, n2E, n3E, nameD, guestD, dietaryD) <-
+    (n1E, n2E, n3E, codeD, statusD, guestD, dietaryD) <-
       elAttr "div" ("class" =: "rsvp-modal") $ do
 
-        -- Step 1: name
-        (nameD', n1E') <- rsvpStep stepDyn 1 $ do
-          elAttr "p" ("class" =: "rsvp-step-label") $ text "\191C\243mo te llamas?"
+        -- Step 1: invitation code
+        (codeD', n1E') <- rsvpStep stepDyn 1 $ do
+          elAttr "p" ("class" =: "rsvp-step-label") $ text "Ingresa tu c\243digo de invitaci\243n"
           ti <- inputElement $ def
             & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
               (  "type"        =: "text"
               <> "class"       =: "rsvp-input"
-              <> "placeholder" =: "Tu nombre completo"
+              <> "placeholder" =: "Ej. FAMILIA123"
+              <> "autocomplete" =: "off"
               )
-          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Continuar \8594"
+          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn" <> "type" =: "button") $ text "Continuar \8594"
           return (_inputElement_value ti, domEvent Click nb)
 
-        -- Step 2: guest count (mdo for counter buttons)
-        (guestD', n2E') <- rsvpStep stepDyn 2 $ mdo
-          elAttr "p" ("class" =: "rsvp-step-label") $ text "\191Cu\225ntos asistir\225n?"
+        -- Step 2: attendance response
+        (statusD', n2E') <- rsvpStep stepDyn 2 $ do
+          elAttr "p" ("class" =: "rsvp-step-label") $ text "\191Podr\225s acompa\241arnos?"
+          yesE <- rsvpChoiceButton "S\237, asistir\233"
+          noE  <- rsvpChoiceButton "No podr\233 asistir"
+          statusD'' <- holdDyn Attending $ leftmost [Attending <$ yesE, Declined <$ noE, Attending <$ openE]
+          let nextChoiceE = leftmost [yesE, noE]
+          return (statusD'', nextChoiceE)
+
+        -- Step 3: guest count and dietary restrictions
+        (guestD', dietaryD', n3E') <- rsvpStep stepDyn 3 $ mdo
+          dyn_ $ ffor statusD' $ \status ->
+            if status == Declined
+              then elAttr "p" ("class" =: "rsvp-step-label") $ text "Gracias por avisarnos. Env\237a tu respuesta para registrarla."
+              else elAttr "p" ("class" =: "rsvp-step-label") $ text "\191Cu\225ntos asistir\225n?"
           countDyn <- foldDyn ($) (1 :: Int) $ leftmost
             [ (\n -> max 1  (n - 1)) <$ minusE
-            , (\n -> min 10 (n + 1)) <$ plusE
+            , (\n -> min 20 (n + 1)) <$ plusE
             , const 1               <$ openE
             ]
-          (minusE, plusE) <- elAttr "div" ("class" =: "rsvp-counter") $ do
+          (minusE, plusE) <- elDynAttr "div"
+            (ffor statusD' $ \status -> "class" =: "rsvp-counter" <> if status == Declined then "style" =: "display:none" else mempty) $ do
             (minEl, _) <- elAttr' "button" ("class" =: "rsvp-counter-btn") $ text "\8722"
             el "span" $ dynText (T.pack . show <$> countDyn)
             (plusEl, _) <- elAttr' "button" ("class" =: "rsvp-counter-btn") $ text "+"
             return (domEvent Click minEl, domEvent Click plusEl)
-          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Continuar \8594"
-          return (countDyn, domEvent Click nb)
-
-        -- Step 3: dietary restrictions
-        (dietaryD', n3E') <- rsvpStep stepDyn 3 $ do
-          elAttr "p" ("class" =: "rsvp-step-label") $
-            text "\191Alguna restricci\243n alimentaria?"
           ti <- inputElement $ def
             & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
               (  "type"        =: "text"
               <> "class"       =: "rsvp-input"
-              <> "placeholder" =: "Opcional"
+              <> "placeholder" =: "Restricciones alimentarias (opcional)"
               )
-          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn") $ text "Continuar \8594"
-          return (_inputElement_value ti, domEvent Click nb)
+          (nb, _) <- elAttr' "button" ("class" =: "rsvp-btn" <> "type" =: "button") $ text "Continuar \8594"
+          let guestsD = zipDynWith (\status guests -> if status == Declined then 0 else guests) statusD' countDyn
+          return (guestsD, _inputElement_value ti, domEvent Click nb)
 
         -- Step 4: summary + POST submission
         rsvpStep_ stepDyn 4 $ mdo
           elAttr "p" ("class" =: "rsvp-step-label") $ text "\161Todo listo!"
-          let summaryDyn = summaryRows <$> nameD' <*> guestD' <*> dietaryD'
+          let summaryDyn = summaryRows <$> codeD' <*> statusD' <*> guestD' <*> dietaryD'
           elAttr "div" ("class" =: "rsvp-summary") $
             dyn_ $ ffor summaryDyn $ \rows ->
               forM_ rows $ \row -> el "p" $ text row
 
-          let rsvpDyn = Rsvp <$> nameD' <*> guestD' <*> dietaryD'
+          let rsvpDyn = RsvpRequest <$> (T.strip <$> codeD') <*> statusD' <*> guestD' <*> dietaryD' <*> pure []
               reqDyn  = ffor rsvpDyn $ \r ->
                 XhrRequest "POST" "/api/rsvp" $ def
                   & xhrRequestConfig_headers     .~ ("Content-Type" =: "application/json")
@@ -302,7 +322,7 @@ rsvpOverlay openE = mdo
              <> if statusVisible s then mempty else "style" =: "display:none"
             ) $ dynText (statusMsg <$> statusDyn)
 
-        return (n1E', n2E', n3E', nameD', guestD', dietaryD')
+        return (n1E', n2E', n3E', codeD', statusD', guestD', dietaryD')
 
     return (domEvent Click closeBtnEl, leftmost [n1E, n2E, n3E])
 
@@ -325,11 +345,19 @@ rsvpStep_ :: (DomBuilder t m, PostBuild t m)
 rsvpStep_ stepDyn n body = rsvpStep stepDyn n body >> return ()
 
 -- Build the summary paragraph list shown on step 4.
-summaryRows :: Text -> Int -> Text -> [Text]
-summaryRows name guests dietary =
-  [ "Nombre: "    <> if T.null name then "\8212" else name
+summaryRows :: Text -> AttendanceStatus -> Int -> Text -> [Text]
+summaryRows code status guests dietary =
+  [ "C\243digo: " <> if T.null (T.strip code) then "\8212" else T.strip code
+  , "Respuesta: " <> case status of
+      Attending -> "S\237 asistir\233"
+      Declined  -> "No podr\233 asistir"
   , "Asistentes: " <> T.pack (show guests)
-  ] ++ [ "Restricciones: " <> dietary | not (T.null dietary) ]
+  ] ++ [ "Restricciones: " <> dietary | status == Attending && not (T.null dietary) ]
+
+rsvpChoiceButton :: DomBuilder t m => Text -> m (Event t ())
+rsvpChoiceButton label = do
+  (btnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn rsvp-choice-btn" <> "type" =: "button") $ text label
+  pure (() <$ domEvent Click btnEl)
 
 -- ── RSVP submission status ────────────────────────────────────────────────────
 
@@ -351,8 +379,8 @@ statusMsg :: RsvpStatus -> Text
 statusMsg s = case s of
   StatusIdle    -> ""
   StatusSending -> "Enviando confirmaci\243n\8230"
-  StatusSuccess -> "\161Confirmaci\243n recibida! Gracias \127881"
-  StatusError   -> "Hubo un problema al enviar. Int\233ntalo de nuevo."
+  StatusSuccess -> "\161Respuesta recibida! Gracias."
+  StatusError   -> "Hubo un problema al enviar. Revisa tu c\243digo e int\233ntalo de nuevo."
 
 -- ── MESA DE REGALOS ──────────────────────────────────────────────────────────
 
@@ -506,8 +534,238 @@ underConstructionOverlay openE = mdo
 
 -- ── Admin mount ───────────────────────────────────────────────────────────────
 
-adminRoot :: DomBuilder t m => m ()
-adminRoot = elAttr "div" ("id" =: "admin-root") blank
+data AdminTab = TabInvitees | TabRsvps | TabVideos
+  deriving (Eq)
+
+adminRoot :: MonadWidget t m => m ()
+adminRoot = elAttr "div" ("id" =: "admin") $ mdo
+  pb <- getPostBuild
+  meRespE <- performRequestAsync (xhrGet "/api/admin/me" <$ pb)
+
+  authDyn <- holdDyn False $ leftmost
+    [ True <$ xhrOk meRespE
+    , True <$ loginOkE
+    , False <$ logoutDoneE
+    ]
+
+  loginOkE <- elDynAttr "div" (visibleAttrs . not <$> authDyn) adminLogin
+  logoutDoneE <- elDynAttr "div" (visibleAttrs <$> authDyn) (adminDashboard authDyn)
+  pure ()
+
+adminLogin :: MonadWidget t m => m (Event t ())
+adminLogin = elAttr "main" ("class" =: "admin-page") $
+  elAttr "section" ("class" =: "admin-login") $ mdo
+    elAttr "p" ("class" =: "admin-kicker") $ text "ADMIN"
+    el "h1" $ text "Wedding dashboard"
+    elAttr "p" ("class" =: "admin-muted") $ text "Administra invitados, RSVP y videos."
+    passEl <- inputElement $ def
+      & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
+        ( "class" =: "admin-input" <> "type" =: "password" <> "placeholder" =: "Password" <> "autocomplete" =: "current-password" )
+    (btnEl, _) <- elAttr' "button" ("class" =: "admin-btn" <> "type" =: "button") $ text "Entrar"
+    let loginReqDyn = ffor (_inputElement_value passEl) $ \password ->
+          XhrRequest "POST" "/api/admin/login" $ def
+            & xhrRequestConfig_headers .~ ("Content-Type" =: "application/json")
+            & xhrRequestConfig_sendData .~ TE.decodeUtf8 (BL.toStrict (encode (LoginRequest password)))
+    respE <- performRequestAsync (current loginReqDyn `tag` domEvent Click btnEl)
+    let okE = xhrOk respE
+        badE = ffilter not (xhrSuccess <$> respE)
+    msgDyn <- holdDyn "" $ leftmost ["" <$ okE, "Password inv\225lido." <$ badE]
+    elAttr "p" ("class" =: "admin-error") $ dynText msgDyn
+    pure okE
+
+adminDashboard :: MonadWidget t m => Dynamic t Bool -> m (Event t ())
+adminDashboard authDyn = elAttr "main" ("class" =: "admin-page") $ mdo
+  logoutClickE <- elAttr "header" ("class" =: "admin-top") $ do
+    el "div" $ do
+      elAttr "p" ("class" =: "admin-kicker") $ text "ADMIN"
+      el "h1" $ text "Wedding dashboard"
+    elAttr "div" ("class" =: "admin-actions") $ do
+      elAttr "a" ("class" =: "admin-link" <> "href" =: "#hero") $ text "Sitio publico"
+      (logoutBtn, _) <- elAttr' "button" ("class" =: "admin-btn ghost" <> "type" =: "button") $ text "Salir"
+      pure (domEvent Click logoutBtn)
+
+  tabDyn <- adminTabs
+  let loadE = leftmost [() <$ ffilter id (updated authDyn), () <$ refreshE]
+  inviteesRespE <- performRequestAsync (xhrGet "/api/admin/invitees" <$ loadE)
+  rsvpsRespE <- performRequestAsync (xhrGet "/api/admin/rsvps" <$ loadE)
+  videosRespE <- performRequestAsync (xhrGet "/api/admin/videos" <$ loadE)
+  inviteesDyn <- holdDyn [] (decodeXhrList <$> inviteesRespE)
+  rsvpsDyn <- holdDyn [] (decodeXhrList <$> rsvpsRespE)
+  videosDyn <- holdDyn [] (decodeXhrList <$> videosRespE)
+
+  refreshE <- elAttr "section" ("class" =: "admin-panel") $ do
+    panelDyn <- dyn $ ffor tabDyn $ \tab -> case tab of
+      TabInvitees -> adminInviteesPanel inviteesDyn
+      TabRsvps    -> adminRsvpsPanel rsvpsDyn
+      TabVideos   -> adminVideosPanel videosDyn
+    switchHold never panelDyn
+
+  logoutRespE <- performRequestAsync (xhrPostNoBody "/api/admin/logout" <$ logoutClickE)
+  pure (xhrOk logoutRespE)
+
+adminTabs :: MonadWidget t m => m (Dynamic t AdminTab)
+adminTabs = elAttr "nav" ("class" =: "admin-tabs") $ mdo
+  (inviteBtn, _) <- elDynAttr' "button" (tabAttrs TabInvitees <$> tabDyn) $ text "Invitados"
+  (rsvpBtn, _) <- elDynAttr' "button" (tabAttrs TabRsvps <$> tabDyn) $ text "RSVPs"
+  (videoBtn, _) <- elDynAttr' "button" (tabAttrs TabVideos <$> tabDyn) $ text "Videos"
+  tabDyn <- holdDyn TabInvitees $ leftmost
+    [ TabInvitees <$ domEvent Click inviteBtn
+    , TabRsvps    <$ domEvent Click rsvpBtn
+    , TabVideos   <$ domEvent Click videoBtn
+    ]
+  pure tabDyn
+
+adminInviteesPanel :: MonadWidget t m => Dynamic t [Invitee] -> m (Event t ())
+adminInviteesPanel inviteesDyn = elAttr "div" ("class" =: "admin-grid") $ mdo
+  createOkE <- elAttr "div" ("class" =: "admin-card admin-form") $ do
+    el "h2" $ text "Agregar invitado"
+    nameEl <- adminInput "text" "Nombre" ""
+    codeEl <- adminInput "text" "Codigo de invitacion" ""
+    maxEl <- adminInput "number" "Max asistentes" "1"
+    notesEl <- adminTextArea "Notas"
+    (btnEl, _) <- elAttr' "button" ("class" =: "admin-btn" <> "type" =: "button") $ text "Agregar"
+    let inputDyn = InviteeInput
+          <$> _inputElement_value nameEl
+          <*> (emptyToMaybe <$> _inputElement_value codeEl)
+          <*> (parseCount <$> _inputElement_value maxEl)
+          <*> (emptyToMaybe <$> _textAreaElement_value notesEl)
+        reqDyn = adminJsonRequest "POST" "/api/admin/invitees" <$> inputDyn
+    respE <- performRequestAsync (current reqDyn `tag` domEvent Click btnEl)
+    pure (xhrOk respE)
+
+  deleteE <- elAttr "div" ("class" =: "admin-card") $ do
+    el "h2" $ do
+      text "Invitados ("
+      dynText (T.pack . show . length <$> inviteesDyn)
+      text ")"
+    deleteDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList inviteesDyn adminInviteeRow
+    pure (switchDyn (leftmost <$> deleteDyn))
+  deleteRespE <- performRequestAsync (xhrDelete . ("/api/admin/invitees/" <>) . T.pack . show <$> deleteE)
+  pure $ leftmost [createOkE, xhrOk deleteRespE]
+
+adminInviteeRow :: MonadWidget t m => Dynamic t Invitee -> m (Event t Int)
+adminInviteeRow inviteeDyn = elAttr "article" ("class" =: "admin-row") $ do
+  el "div" $ do
+    el "strong" $ dynText (inviteeName <$> inviteeDyn)
+    el "p" $ dynText (inviteeMeta <$> inviteeDyn)
+    el "p" $ dynText (maybe "" id . inviteeNotes <$> inviteeDyn)
+  (btnEl, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
+  pure (fromIntegral . inviteeId <$> current inviteeDyn `tag` domEvent Click btnEl)
+
+adminRsvpsPanel :: MonadWidget t m => Dynamic t [RsvpAdmin] -> m (Event t ())
+adminRsvpsPanel rsvpsDyn = elAttr "div" ("class" =: "admin-card") $ do
+  el "h2" $ do
+    text "RSVPs ("
+    dynText (T.pack . show . length <$> rsvpsDyn)
+    text ") - "
+    dynText (T.pack . show . totalGuests <$> rsvpsDyn)
+    text " asistentes"
+  elAttr "div" ("class" =: "admin-list") $ simpleList rsvpsDyn adminRsvpRow
+  pure never
+
+adminRsvpRow :: MonadWidget t m => Dynamic t RsvpAdmin -> m ()
+adminRsvpRow rsvpDyn = elAttr "article" ("class" =: "admin-row") $ el "div" $ do
+  el "strong" $ dynText (raName <$> rsvpDyn)
+  el "p" $ dynText (rsvpMeta <$> rsvpDyn)
+  el "p" $ dynText (rsvpInviteeMeta <$> rsvpDyn)
+  el "p" $ dynText (maybe "" id . raDietary <$> rsvpDyn)
+
+adminVideosPanel :: MonadWidget t m => Dynamic t [VideoAdmin] -> m (Event t ())
+adminVideosPanel videosDyn = elAttr "div" ("class" =: "admin-card") $ do
+  el "h2" $ do
+    text "Videos ("
+    dynText (T.pack . show . length <$> videosDyn)
+    text ")"
+  elAttr "div" ("class" =: "admin-list") $ simpleList videosDyn adminVideoRow
+  pure never
+
+adminVideoRow :: MonadWidget t m => Dynamic t VideoAdmin -> m ()
+adminVideoRow videoDyn = elAttr "article" ("class" =: "admin-row") $ do
+  el "div" $ do
+    el "strong" $ dynText (vaOriginalFilename <$> videoDyn)
+    el "p" $ dynText (videoMeta <$> videoDyn)
+    el "p" $ dynText (videoSubmitterMeta <$> videoDyn)
+  elDynAttr "a" (videoDownloadAttrs <$> videoDyn) $ text "Descargar"
+
+adminInput :: MonadWidget t m => Text -> Text -> Text -> m (InputElement EventResult (DomBuilderSpace m) t)
+adminInput inputType placeholder value = inputElement $ def
+  & inputElementConfig_initialValue .~ value
+  & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
+    ("class" =: "admin-input" <> "type" =: inputType <> "placeholder" =: placeholder)
+
+adminTextArea :: MonadWidget t m => Text -> m (TextAreaElement EventResult (DomBuilderSpace m) t)
+adminTextArea placeholder = textAreaElement $ def
+  & textAreaElementConfig_elementConfig . elementConfig_initialAttributes .~
+    ("class" =: "admin-input" <> "placeholder" =: placeholder)
+
+xhrGet :: Text -> XhrRequest Text
+xhrGet url = XhrRequest "GET" url $ def
+  & xhrRequestConfig_sendData .~ ""
+
+xhrDelete :: Text -> XhrRequest Text
+xhrDelete url = XhrRequest "DELETE" url $ def
+  & xhrRequestConfig_sendData .~ ""
+
+xhrPostNoBody :: Text -> XhrRequest Text
+xhrPostNoBody url = XhrRequest "POST" url $ def
+  & xhrRequestConfig_sendData .~ ""
+
+adminJsonRequest :: ToJSON a => Text -> Text -> a -> XhrRequest Text
+adminJsonRequest method url value = XhrRequest method url $ def
+  & xhrRequestConfig_headers .~ ("Content-Type" =: "application/json")
+  & xhrRequestConfig_sendData .~ TE.decodeUtf8 (BL.toStrict (encode value))
+
+xhrSuccess :: XhrResponse -> Bool
+xhrSuccess resp = let s = _xhrResponse_status resp in s >= 200 && s < 300
+
+xhrOk :: Reflex t => Event t XhrResponse -> Event t ()
+xhrOk = (() <$) . ffilter xhrSuccess
+
+decodeXhrList :: FromJSON a => XhrResponse -> [a]
+decodeXhrList resp = case decode (BL.fromStrict (TE.encodeUtf8 (maybe "[]" id (_xhrResponse_responseText resp)))) of
+  Just xs -> xs
+  Nothing -> []
+
+visibleAttrs :: Bool -> Map Text Text
+visibleAttrs True  = mempty
+visibleAttrs False = "style" =: "display:none"
+
+tabAttrs :: AdminTab -> AdminTab -> Map Text Text
+tabAttrs mine current =
+  "type" =: "button" <> "class" =: if mine == current then "active" else ""
+
+parseCount :: Text -> Int
+parseCount value = maybe 1 (max 1 . min 20) (readMaybe (T.unpack value))
+
+emptyToMaybe :: Text -> Maybe Text
+emptyToMaybe value = let stripped = T.strip value in if T.null stripped then Nothing else Just stripped
+
+inviteeMeta :: Invitee -> Text
+inviteeMeta i = maybe "sin codigo" id (inviteeCode i) <> " - max " <> T.pack (show (inviteeMaxGuests i)) <> " asistentes"
+
+statusLabel :: AttendanceStatus -> Text
+statusLabel Attending = "attending"
+statusLabel Declined = "declined"
+
+rsvpMeta :: RsvpAdmin -> Text
+rsvpMeta r = statusLabel (raStatus r) <> " - " <> T.pack (show (raGuestCount r)) <> " asistentes - " <> raCreatedAt r
+
+rsvpInviteeMeta :: RsvpAdmin -> Text
+rsvpInviteeMeta r =
+  "Invitado: " <> maybe "sin ligar" (T.pack . show) (raInviteeId r) <> " - Codigo: " <> maybe "none" id (raInvitationCodeUsed r)
+
+totalGuests :: [RsvpAdmin] -> Int
+totalGuests = sum . map (\r -> if raStatus r == Attending then raGuestCount r else 0)
+
+videoMeta :: VideoAdmin -> Text
+videoMeta v = vaContentType v <> " - " <> T.pack (show (fromIntegral (vaSizeBytes v) / (1048576 :: Double))) <> " MB - " <> vaCreatedAt v
+
+videoSubmitterMeta :: VideoAdmin -> Text
+videoSubmitterMeta v = maybe "anonimo" id (vaSubmitterName v) <> " " <> maybe "" id (vaMessage v)
+
+videoDownloadAttrs :: VideoAdmin -> Map Text Text
+videoDownloadAttrs v =
+  "class" =: "admin-btn small" <> "href" =: ("/api/admin/videos/" <> vaId v <> "/download")
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1190,10 +1448,10 @@ siteCSS = T.unlines
   , ""
 
   -- ── Admin dashboard ───────────────────────────────────────────────────────
-  , "#admin-root { display: none; min-height: 100svh; background: #160f0a; }"
-  , "body.admin-mode { background: #160f0a; overflow-x: hidden; }"
-  , "body.admin-mode .site-shell { display: none; }"
-  , "body.admin-mode #admin-root { display: block; }"
+  , "#admin { display: none; min-height: 100svh; background: #160f0a; }"
+  , "body:has(#admin:target) { background: #160f0a; overflow-x: hidden; }"
+  , "body:has(#admin:target) .site-shell { display: none; }"
+  , "#admin:target { display: block; }"
   , ".admin-page { min-height: 100svh; padding: clamp(1rem, 4vw, 3rem); color: #f0ebe0; background: radial-gradient(circle at 20% 0%, rgba(176,129,76,.18), transparent 36%), #160f0a; }"
   , ".admin-top { display: flex; justify-content: space-between; gap: 1rem; align-items: center; max-width: 1160px; margin: 0 auto 1.2rem; }"
   , ".admin-top h1, .admin-login h1 { font-weight: 400; letter-spacing: .04em; }"
