@@ -66,7 +66,7 @@
           };
         });
 
-        # GHCJS-compiled Haskell → .jsexe bundle
+        # GHCJS-compiled Haskell → .jsexe bundles
         ghcjsBuild = project.ghcjs.wedding-frontend;
 
         # Gather public/ assets into the nix store.
@@ -109,9 +109,19 @@
           # Our HTML shell overwrites any index.html from the jsexe bundle
           install -m644 ${./index.html} "$out/index.html"
         '';
+
+        adminWebsite = pkgs.runCommand "wedding-admin-website" {
+          nativeBuildInputs = [ pkgs.rsync ];
+        } ''
+          rsync -r --no-perms --chmod=Du+rwx,Fu+rw \
+            ${ghcjsBuild}/bin/wedding-admin-frontend.jsexe/ "$out/"
+
+          install -m644 ${./index.html} "$out/index.html"
+        '';
       in {
         # ── Packages ────────────────────────────────────────────────────────
         packages.website         = website;
+        packages.admin-website   = adminWebsite;
         packages.wedding-backend = weddingBackend;
         packages.default         = website;
 
@@ -151,6 +161,7 @@
 
         # Ensures the GHCJS static build succeeds
         checks.website = self'.packages.website;
+        checks.admin-website = self'.packages.admin-website;
 
         # Ensures darkhttpd + the website package are both available
         checks.default-app = pkgs.runCommand "check-default-app" {} ''
@@ -166,6 +177,8 @@
           test -f ${self'.packages.website}/rts.js      || (echo "MISSING rts.js"; exit 1)
           test -f ${self'.packages.website}/out.js      || (echo "MISSING out.js"; exit 1)
           test -f ${self'.packages.website}/lib.js      || (echo "MISSING lib.js"; exit 1)
+          test -f ${self'.packages.admin-website}/index.html  || (echo "MISSING admin index.html"; exit 1)
+          test -f ${self'.packages.admin-website}/out.js      || (echo "MISSING admin out.js"; exit 1)
           test -d ${self'.packages.website}/images      || (echo "MISSING images/"; exit 1)
           for img in 1.png 2.png 3.png 4.png 5.png; do
             test -f ${self'.packages.website}/images/$img \

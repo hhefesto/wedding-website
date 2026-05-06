@@ -21,3 +21,22 @@ executable wedding-frontend
       OverloadedStrings
     , RecursiveDo
     , ScopedTypeVariables
+
+executable wedding-admin-frontend
+  main-is:          Admin.hs
+  hs-source-dirs:   src
+  build-depends:
+      base        >= 4.12 && < 5
+    , bytestring
+    , containers
+    , jsaddle
+    , reflex
+    , reflex-dom
+    , text
+    , aeson
+    , wedding-shared
+  default-language:   Haskell2010
+  default-extensions:
+      OverloadedStrings
+    , RecursiveDo
+    , ScopedTypeVariables

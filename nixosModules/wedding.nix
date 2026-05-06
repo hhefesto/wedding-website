@@ -7,6 +7,7 @@
 #     packages = {
 #       backend    = inputs.wedding-page.packages.${system}.wedding-backend;
 #       staticRoot = inputs.wedding-page.packages.${system}.website;
+#       adminStaticRoot = inputs.wedding-page.packages.${system}.admin-website;
 #     };
 #     databaseName = "wedding";
 #     serverName   = "wedding.local";
@@ -18,7 +19,7 @@
 # `ports.database` (NixOS cannot merge a single-valued port across modules).
 
 { ports                       # { nginx, backend, database }
-, packages                    # { backend, staticRoot }
+, packages                    # { backend, staticRoot, adminStaticRoot }
 , databaseName ? "wedding"    # DB name and owning role on the shared cluster
 , serverName   ? "_"
 , openFirewall ? true
@@ -86,6 +87,7 @@ in
         port       = ports.nginx;
         serverName = serverName;
         staticRoot = packages.staticRoot;
+        adminStaticRoot = packages.adminStaticRoot;
         uploadMaxBodySize = uploadMaxBodySize;
       };
 

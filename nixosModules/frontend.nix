@@ -24,6 +24,11 @@ in {
       description = "Path to the GHCJS-built wedding website static directory.";
     };
 
+    adminStaticRoot = lib.mkOption {
+      type        = lib.types.path;
+      description = "Path to the GHCJS-built wedding admin static directory.";
+    };
+
     uploadMaxBodySize = lib.mkOption {
       type        = lib.types.str;
       default     = "200m";
@@ -64,6 +69,11 @@ in {
               proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
               proxy_set_header X-Forwarded-Proto $scheme;
             '';
+          };
+
+          "/admin/" = {
+            alias = "${toString cfg.adminStaticRoot}/";
+            tryFiles = "$uri $uri/ /admin/index.html";
           };
         };
       };
