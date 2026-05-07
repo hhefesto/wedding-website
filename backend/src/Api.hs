@@ -22,7 +22,7 @@ import           Database.PostgreSQL.Simple (Connection)
 import           Network.Wai                (Application)
 import           Servant
 import           Servant.Multipart          (MultipartData, MultipartForm, Tmp)
-import           System.Directory           (doesFileExist)
+import           System.Directory           (doesFileExist, removeFile)
 import           System.Exit                (ExitCode (..))
 import           System.FilePath            ((</>))
 import           System.IO                  (hClose, hPutStrLn, stderr)
@@ -70,8 +70,10 @@ type API =
   :<|> "api" :> "admin" :> "invitees" :> Capture "id" Int64 :> "qr" :> CookieHeader :> Get '[OctetStream] DownloadFile
   :<|> "api" :> "admin" :> "rsvps" :> CookieHeader :> Get '[JSON] [RsvpAdmin]
   :<|> "api" :> "admin" :> "rsvps" :> Capture "id" Text :> "invitee" :> CookieHeader :> ReqBody '[JSON] LinkInviteeBody :> Put '[JSON] RsvpAdmin
+  :<|> "api" :> "admin" :> "rsvps" :> Capture "id" Text :> CookieHeader :> Delete '[JSON] NoContent
   :<|> "api" :> "admin" :> "videos" :> CookieHeader :> Get '[JSON] [VideoAdmin]
   :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> "download" :> CookieHeader :> Get '[OctetStream] DownloadFile
+  :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> CookieHeader :> Delete '[JSON] NoContent
 
 api :: Proxy API
 api = Proxy
@@ -94,8 +96,10 @@ server cfg var =
   :<|> inviteeQrH cfg var
   :<|> listRsvpsH var
   :<|> linkRsvpInviteeH var
+  :<|> deleteRsvpH var
   :<|> listVideosH var
   :<|> downloadVideoH cfg var
+  :<|> deleteVideoH cfg var
 
 healthH :: Handler String
 healthH = pure "ok"
@@ -112,9 +116,12 @@ rsvpH var r = do
   case result of
     Left msg -> throwError err400 { errBody = textBody msg }
     Right invitee -> do
-      token <- liftIO generateToken
-      withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
-      pure (addHeader (rsvpSessionCookie token) NoContent)
+      if inviteeId invitee > 0
+        then do
+          token <- liftIO generateToken
+          withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
+          pure (addHeader (rsvpSessionCookie token) NoContent)
+        else pure (addHeader "" NoContent)
 
 rsvpLoginH :: ConnVar -> RsvpLoginRequest -> Handler (SetCookie NoContent)
 rsvpLoginH var req = do
@@ -204,6 +211,12 @@ linkRsvpInviteeH var rid mCookie body = do
   mRsvp <- withDb var (\conn -> Db.linkRsvpInvitee conn rid body)
   maybe (throwError err404) pure mRsvp
 
+deleteRsvpH :: ConnVar -> Text -> Maybe Text -> Handler NoContent
+deleteRsvpH var rid mCookie = do
+  requireAdmin var mCookie
+  withDb var (`Db.deleteRsvp` rid)
+  pure NoContent
+
 listVideosH :: ConnVar -> Maybe Text -> Handler [VideoAdmin]
 listVideosH var mCookie = do
   requireAdmin var mCookie
@@ -221,6 +234,17 @@ downloadVideoH cfg var vid mCookie = do
     else do
       bytes <- liftIO (BL.readFile path)
       pure (addHeader (downloadDisposition (vaOriginalFilename video)) bytes)
+
+deleteVideoH :: AppConfig -> ConnVar -> Text -> Maybe Text -> Handler NoContent
+deleteVideoH cfg var vid mCookie = do
+  requireAdmin var mCookie
+  mStored <- withDb var (`Db.deleteVideo` vid)
+  case mStored of
+    Nothing -> throwError err404
+    Just stored -> do
+      let path = appVideoDir cfg </> T.unpack stored
+      _ <- liftIO (try (removeFile path) :: IO (Either SomeException ()))
+      pure NoContent
 
 withDb :: ConnVar -> (Connection -> IO a) -> Handler a
 withDb var action = do
@@ -305,7 +329,7 @@ ensureInviteeCode input =
       pure input { iiCode = Just ("INV-" <> T.filter (/= '-') token) }
 
 inviteeUrl :: AppConfig -> Text -> Text
-inviteeUrl cfg code = appPublicBaseUrl cfg <> "/?code=" <> urlEncode code <> "#rsvp"
+inviteeUrl cfg code = appPublicBaseUrl cfg <> "/?code=" <> urlEncode code
 
 urlEncode :: Text -> Text
 urlEncode = T.concatMap encodeChar

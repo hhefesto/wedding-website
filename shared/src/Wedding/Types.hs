@@ -43,7 +43,8 @@ instance FromJSON AttendanceStatus where
       _           -> fail "AttendanceStatus must be attending or declined"
 
 data RsvpRequest = RsvpRequest
-  { rrInvitationCode :: Text
+  { rrName           :: Text
+  , rrInvitationCode :: Text
   , rrStatus         :: AttendanceStatus
   , rrGuestCount     :: Int
   , rrDietary        :: Text
@@ -52,7 +53,8 @@ data RsvpRequest = RsvpRequest
 
 instance ToJSON RsvpRequest where
   toJSON r = object
-    [ "invitationCode" .= rrInvitationCode r
+    [ "name"           .= rrName r
+    , "invitationCode" .= rrInvitationCode r
     , "status"         .= rrStatus r
     , "guestCount"     .= rrGuestCount r
     , "dietary"        .= rrDietary r
@@ -62,7 +64,8 @@ instance ToJSON RsvpRequest where
 instance FromJSON RsvpRequest where
   parseJSON = withObject "RsvpRequest" $ \o ->
     RsvpRequest
-      <$> o .:  "invitationCode"
+      <$> o .:? "name" .!= ""
+      <*> o .:? "invitationCode" .!= ""
       <*> o .:  "status"
       <*> o .:  "guestCount"
       <*> o .:? "dietary" .!= ""
@@ -174,6 +177,8 @@ data RsvpAdmin = RsvpAdmin
   , raDietary            :: Maybe Text
   , raInviteeId          :: Maybe Int64
   , raInvitationCodeUsed :: Maybe Text
+  , raInviteeName        :: Maybe Text
+  , raInviteeCode        :: Maybe Text
   , raCreatedAt          :: Text
   } deriving (Eq, Show, Generic)
 
@@ -186,6 +191,8 @@ instance ToJSON RsvpAdmin where
     , "dietary"            .= raDietary r
     , "inviteeId"          .= raInviteeId r
     , "invitationCodeUsed" .= raInvitationCodeUsed r
+    , "inviteeName"        .= raInviteeName r
+    , "inviteeCode"        .= raInviteeCode r
     , "createdAt"          .= raCreatedAt r
     ]
 
@@ -199,6 +206,8 @@ instance FromJSON RsvpAdmin where
       <*> o .:? "dietary"
       <*> o .:? "inviteeId"
       <*> o .:? "invitationCodeUsed"
+      <*> o .:? "inviteeName"
+      <*> o .:? "inviteeCode"
       <*> o .:  "createdAt"
 
 newtype LinkInviteeBody = LinkInviteeBody

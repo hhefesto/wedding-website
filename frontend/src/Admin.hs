@@ -6,6 +6,7 @@ import           Data.Aeson               (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy     as BL
 import           Control.Monad            (void)
 import           Data.Map                 (Map)
+import           Data.Int                 (Int64)
 import           Data.Text                (Text)
 import qualified Data.Text                as T
 import qualified Data.Text.Encoding       as TE
@@ -13,8 +14,9 @@ import           Language.Javascript.JSaddle (MonadJSM, eval, liftJSM)
 import           Reflex.Dom
 import           Text.Read                (readMaybe)
 import           Wedding.Types            (AttendanceStatus (..), Invitee (..),
-                                           InviteeInput (..), LoginRequest (..),
-                                           RsvpAdmin (..), VideoAdmin (..))
+                                           InviteeInput (..), LinkInviteeBody (..),
+                                           LoginRequest (..), RsvpAdmin (..),
+                                           VideoAdmin (..))
 
 main :: IO ()
 main = mainWidgetWithHead headW adminRoot
@@ -26,6 +28,9 @@ headW = do
 
 data AdminTab = TabInvitees | TabRsvps | TabVideos
   deriving (Eq)
+
+data RsvpAdminAction = LinkRsvp Text (Maybe Int64) | DeleteRsvp Text
+data VideoAdminAction = DeleteVideo Text
 
 adminRoot :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 adminRoot = mdo
@@ -82,7 +87,7 @@ adminDashboard loggedInE = elAttr "main" ("class" =: "admin-page") $ mdo
   refreshE <- elAttr "section" ("class" =: "admin-panel") $ do
     panelDyn <- dyn $ ffor tabDyn $ \tab -> case tab of
       TabInvitees -> adminInviteesPanel inviteesDyn
-      TabRsvps    -> adminRsvpsPanel rsvpsDyn
+      TabRsvps    -> adminRsvpsPanel inviteesDyn rsvpsDyn
       TabVideos   -> adminVideosPanel videosDyn
     switchHold never panelDyn
   logoutRespE <- performRequestAsync (xhrPostNoBody "/api/admin/logout" <$ logoutClickE)
@@ -106,7 +111,7 @@ adminInviteesPanel inviteesDyn = elAttr "div" ("class" =: "admin-grid") $ mdo
     el "h2" $ text "Agregar invitado"
     nameEl <- adminInput "text" "Nombre" ""
     codeEl <- adminInput "text" "Codigo de invitacion" ""
-    maxEl <- adminInput "number" "Max asistentes" "1"
+    maxEl <- adminInput "number" "Max adultos (max 2)" "1"
     notesEl <- adminTextArea "Notas"
     (btnEl, _) <- elAttr' "button" ("class" =: "admin-btn" <> "type" =: "button") $ text "Agregar"
     let inputDyn = InviteeInput
@@ -147,23 +152,42 @@ adminInviteeRow inviteeDyn = elAttr "article" ("class" =: "admin-row") $ do
   (btnEl, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
   pure (fromIntegral . inviteeId <$> current inviteeDyn `tag` domEvent Click btnEl)
 
-adminRsvpsPanel :: MonadWidget t m => Dynamic t [RsvpAdmin] -> m (Event t ())
-adminRsvpsPanel rsvpsDyn = elAttr "div" ("class" =: "admin-card") $ do
+adminRsvpsPanel :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t [RsvpAdmin] -> m (Event t ())
+adminRsvpsPanel inviteesDyn rsvpsDyn = elAttr "div" ("class" =: "admin-card") $ do
   el "h2" $ do
     text "RSVPs ("
     dynText (T.pack . show . length <$> rsvpsDyn)
     text ") - "
     dynText (T.pack . show . totalGuests <$> rsvpsDyn)
-    text " asistentes"
-  elAttr "div" ("class" =: "admin-list") $ simpleList rsvpsDyn adminRsvpRow
-  pure never
+    text " adultos"
+  actionDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList rsvpsDyn (adminRsvpRow inviteesDyn)
+  let actionE = switchDyn (leftmost <$> actionDyn)
+      reqE = ffor actionE $ \action -> case action of
+        LinkRsvp rid miid -> adminJsonRequest "PUT" ("/api/admin/rsvps/" <> rid <> "/invitee") (LinkInviteeBody miid)
+        DeleteRsvp rid    -> xhrDelete ("/api/admin/rsvps/" <> rid)
+  respE <- performRequestAsync reqE
+  pure (xhrOk respE)
 
-adminRsvpRow :: MonadWidget t m => Dynamic t RsvpAdmin -> m ()
-adminRsvpRow rsvpDyn = elAttr "article" ("class" =: "admin-row") $ el "div" $ do
-  el "strong" $ dynText (raName <$> rsvpDyn)
-  el "p" $ dynText (rsvpMeta <$> rsvpDyn)
-  el "p" $ dynText (rsvpInviteeMeta <$> rsvpDyn)
-  el "p" $ dynText (maybe "" id . raDietary <$> rsvpDyn)
+adminRsvpRow :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t RsvpAdmin -> m (Event t RsvpAdminAction)
+adminRsvpRow inviteesDyn rsvpDyn = elAttr "article" ("class" =: "admin-row") $ do
+  el "div" $ do
+    el "strong" $ dynText (raName <$> rsvpDyn)
+    el "p" $ dynText (rsvpMeta <$> rsvpDyn)
+    el "p" $ dynText (rsvpInviteeMeta <$> rsvpDyn)
+    el "p" $ dynText (maybe "" id . raDietary <$> rsvpDyn)
+  elAttr "div" ("class" =: "admin-row-actions") $ do
+    inviteeIdEl <- adminInput "number" "Invitado ID" ""
+    elAttr "p" ("class" =: "admin-muted tiny") $ dynText (inviteeOptionsText <$> inviteesDyn)
+    (linkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Ligar"
+    (unlinkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $ text "Sin invitacion"
+    (deleteBtn, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar RSVP"
+    let ridD = raId <$> rsvpDyn
+        parsedIdD = parseMaybeInt64 <$> _inputElement_value inviteeIdEl
+    pure $ leftmost
+      [ attachWith LinkRsvp (current ridD) (current parsedIdD `tag` domEvent Click linkBtn)
+      , attachWith (\rid _ -> LinkRsvp rid Nothing) (current ridD) (domEvent Click unlinkBtn)
+      , DeleteRsvp <$> (current ridD `tag` domEvent Click deleteBtn)
+      ]
 
 adminVideosPanel :: MonadWidget t m => Dynamic t [VideoAdmin] -> m (Event t ())
 adminVideosPanel videosDyn = elAttr "div" ("class" =: "admin-card") $ do
@@ -171,16 +195,21 @@ adminVideosPanel videosDyn = elAttr "div" ("class" =: "admin-card") $ do
     text "Videos ("
     dynText (T.pack . show . length <$> videosDyn)
     text ")"
-  elAttr "div" ("class" =: "admin-list") $ simpleList videosDyn adminVideoRow
-  pure never
+  deleteDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList videosDyn adminVideoRow
+  let deleteE = switchDyn (leftmost <$> deleteDyn)
+  respE <- performRequestAsync (xhrDelete . ("/api/admin/videos/" <>) <$> deleteE)
+  pure (xhrOk respE)
 
-adminVideoRow :: MonadWidget t m => Dynamic t VideoAdmin -> m ()
+adminVideoRow :: MonadWidget t m => Dynamic t VideoAdmin -> m (Event t Text)
 adminVideoRow videoDyn = elAttr "article" ("class" =: "admin-row") $ do
   el "div" $ do
     el "strong" $ dynText (vaOriginalFilename <$> videoDyn)
     el "p" $ dynText (videoMeta <$> videoDyn)
     el "p" $ dynText (videoSubmitterMeta <$> videoDyn)
-  elDynAttr "a" (videoDownloadAttrs <$> videoDyn) $ text "Descargar"
+  elAttr "div" ("class" =: "admin-row-actions") $ do
+    elDynAttr "a" (videoDownloadAttrs <$> videoDyn) $ text "Descargar"
+    (deleteBtn, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
+    pure (current (vaId <$> videoDyn) `tag` domEvent Click deleteBtn)
 
 adminInput :: MonadWidget t m => Text -> Text -> Text -> m (InputElement EventResult (DomBuilderSpace m) t)
 adminInput inputType placeholder value = inputElement $ def
@@ -227,16 +256,19 @@ tabAttrs mine current =
   "type" =: "button" <> "class" =: if mine == current then "active" else ""
 
 parseCount :: Text -> Int
-parseCount value = maybe 1 (max 1 . min 20) (readMaybe (T.unpack value))
+parseCount value = maybe 1 (max 1 . min 2) (readMaybe (T.unpack value))
+
+parseMaybeInt64 :: Text -> Maybe Int64
+parseMaybeInt64 value = readMaybe (T.unpack (T.strip value))
 
 emptyToMaybe :: Text -> Maybe Text
 emptyToMaybe value = let stripped = T.strip value in if T.null stripped then Nothing else Just stripped
 
 inviteeMeta :: Invitee -> Text
-inviteeMeta i = maybe "sin codigo" id (inviteeCode i) <> " - max " <> T.pack (show (inviteeMaxGuests i)) <> " asistentes"
+inviteeMeta i = "ID " <> T.pack (show (inviteeId i)) <> " - " <> maybe "sin codigo" id (inviteeCode i) <> " - max " <> T.pack (show (inviteeMaxGuests i)) <> " adultos"
 
 inviteeUrl :: Text -> Text
-inviteeUrl code = "/?code=" <> code <> "#rsvp"
+inviteeUrl code = "/?code=" <> code
 
 inviteeQrAttrs :: Invitee -> Map Text Text
 inviteeQrAttrs invitee =
@@ -262,11 +294,17 @@ statusLabel Attending = "attending"
 statusLabel Declined  = "declined"
 
 rsvpMeta :: RsvpAdmin -> Text
-rsvpMeta r = statusLabel (raStatus r) <> " - " <> T.pack (show (raGuestCount r)) <> " asistentes - " <> raCreatedAt r
+rsvpMeta r = statusLabel (raStatus r) <> " - " <> T.pack (show (raGuestCount r)) <> " adultos - " <> raCreatedAt r
 
 rsvpInviteeMeta :: RsvpAdmin -> Text
 rsvpInviteeMeta r =
-  "Invitado: " <> maybe "sin ligar" (T.pack . show) (raInviteeId r) <> " - Codigo: " <> maybe "none" id (raInvitationCodeUsed r)
+  case raInviteeId r of
+    Nothing -> "Sin invitacion asociada"
+    Just iid -> "Invitacion: " <> maybe ("ID " <> T.pack (show iid)) id (raInviteeName r) <> " - Codigo: " <> maybe "none" id (raInviteeCode r)
+
+inviteeOptionsText :: [Invitee] -> Text
+inviteeOptionsText invitees =
+  "IDs: " <> T.intercalate ", " (map (\i -> T.pack (show (inviteeId i)) <> "=" <> inviteeName i) invitees)
 
 totalGuests :: [RsvpAdmin] -> Int
 totalGuests = sum . map (\r -> if raStatus r == Attending then raGuestCount r else 0)
@@ -327,6 +365,8 @@ adminCSS = T.unlines
   , ".admin-row { display: flex; justify-content: space-between; gap: .8rem; align-items: center; padding: .8rem; border: 1px solid rgba(255,255,255,.10); border-radius: 14px; background: rgba(0,0,0,.14); }"
   , ".admin-row strong { color: #fff; font-weight: 400; }"
   , ".admin-row p { margin-top: .25rem; color: rgba(255,255,255,.65); font-size: .82rem; line-height: 1.45; }"
+  , ".admin-row-actions { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; justify-content: flex-end; max-width: 420px; }"
+  , ".admin-muted.tiny { width: 100%; font-size: .7rem; max-height: 4.2rem; overflow: auto; }"
   , ".admin-qr-box { display: grid; gap: .45rem; justify-items: center; }"
   , ".admin-qr { width: 96px; height: 96px; padding: .35rem; background: rgba(255,255,255,.94); border-radius: 10px; object-fit: contain; }"
   , ".admin-copy-status { position: fixed; right: 1rem; bottom: 1rem; z-index: 50; min-height: 1.5rem; color: #160f0a; background: #d4b483; border-radius: 999px; padding: .55rem .85rem; box-shadow: 0 14px 40px rgba(0,0,0,.32); }"

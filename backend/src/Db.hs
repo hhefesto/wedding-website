@@ -17,9 +17,11 @@ module Db
   , deleteInvitee
   , listRsvps
   , linkRsvpInvitee
+  , deleteRsvp
   , insertVideo
   , listVideos
   , getVideo
+  , deleteVideo
   ) where
 
 import           Control.Monad              (void)
@@ -49,8 +51,10 @@ instance FromRow RsvpAdmin where
     rdietary <- field
     rinvitee <- field
     code <- field
+    inviteeName <- field
+    inviteeCode <- field
     created <- field
-    pure (RsvpAdmin rid rname status count rdietary rinvitee code created)
+    pure (RsvpAdmin rid rname status count rdietary rinvitee code inviteeName inviteeCode created)
 
 instance FromRow VideoAdmin where
   fromRow = VideoAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
@@ -81,8 +85,19 @@ lookupInvite conn rawCode =
 
 submitRsvpRequest :: Connection -> RsvpRequest -> IO (Either Text Invitee)
 submitRsvpRequest conn r = do
+  let submittedName = nonEmpty (rrName r)
   case nonEmpty (rrInvitationCode r) of
-    Nothing -> pure (Left "El codigo de invitacion es obligatorio.")
+    Nothing ->
+      case validateLooseRsvp r of
+        Left msg -> pure (Left msg)
+        Right count -> do
+          name <- case submittedName of
+            Nothing -> pure ""
+            Just n  -> pure n
+          void $ execute conn
+            "INSERT INTO rsvps (name, status, guest_count, dietary, invitee_id, invitation_code_used, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, NOW())"
+            (name, statusToText (rrStatus r), count, nonEmpty (rrDietary r))
+          pure (Right (Invitee 0 name Nothing 2 Nothing ""))
     Just code -> do
       mInvitee <- findInviteeByCode conn code
       case mInvitee of
@@ -91,9 +106,10 @@ submitRsvpRequest conn r = do
           case validateRsvp invitee r of
             Left msg -> pure (Left msg)
             Right count -> do
+              let name = maybe (inviteeName invitee) id submittedName
               void $ execute conn
                 "INSERT INTO rsvps (name, status, guest_count, dietary, invitee_id, invitation_code_used, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW()) ON CONFLICT (invitee_id) WHERE invitee_id IS NOT NULL DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, guest_count = EXCLUDED.guest_count, dietary = EXCLUDED.dietary, invitation_code_used = EXCLUDED.invitation_code_used, updated_at = NOW()"
-                ( inviteeName invitee
+                ( name
                 , statusToText (rrStatus r)
                 , count
                 , nonEmpty (rrDietary r)
@@ -116,8 +132,18 @@ validateRsvp invitee r =
     Attending
       | rrGuestCount r < 1 -> Left "Confirma al menos un asistente o marca que no podras asistir."
       | rrGuestCount r > inviteeMaxGuests invitee ->
-          Left ("Tu invitacion permite hasta " <> T.pack (show (inviteeMaxGuests invitee)) <> " asistentes.")
+          Left ("Tu invitacion permite hasta " <> T.pack (show (inviteeMaxGuests invitee)) <> " adultos.")
       | otherwise -> Right (rrGuestCount r)
+
+validateLooseRsvp :: RsvpRequest -> Either Text Int
+validateLooseRsvp r
+  | T.null (T.strip (rrName r)) = Left "Escribe tu nombre para registrar tu RSVP."
+  | otherwise = case rrStatus r of
+      Declined -> Right 0
+      Attending
+        | rrGuestCount r < 1 -> Left "Confirma al menos un adulto o marca que no podran asistir."
+        | rrGuestCount r > 2 -> Left "Cada RSVP permite hasta 2 adultos."
+        | otherwise -> Right (rrGuestCount r)
 
 insertSession :: Connection -> Text -> IO ()
 insertSession conn token = do
@@ -195,13 +221,13 @@ inviteeHasRsvp conn iid = do
 createInvitee :: Connection -> InviteeInput -> IO Invitee
 createInvitee conn input = oneRow "createInvitee" =<< query conn
   "INSERT INTO invitees (name, code, max_guests, notes) VALUES (?, ?, ?, ?) RETURNING id, name, code, max_guests, notes, created_at::text"
-  (iiName input, iiCode input >>= nonEmpty, iiMaxGuests input, iiNotes input >>= nonEmpty)
+  (iiName input, iiCode input >>= nonEmpty, capGuests (iiMaxGuests input), iiNotes input >>= nonEmpty)
 
 updateInvitee :: Connection -> Int64 -> InviteeInput -> IO (Maybe Invitee)
 updateInvitee conn iid input = do
   rows <- query conn
     "UPDATE invitees SET name = ?, code = ?, max_guests = ?, notes = ? WHERE id = ? RETURNING id, name, code, max_guests, notes, created_at::text"
-    (iiName input, iiCode input >>= nonEmpty, iiMaxGuests input, iiNotes input >>= nonEmpty, iid)
+    (iiName input, iiCode input >>= nonEmpty, capGuests (iiMaxGuests input), iiNotes input >>= nonEmpty, iid)
   pure $ case rows of
     []    -> Nothing
     (i:_) -> Just i
@@ -212,16 +238,23 @@ deleteInvitee conn iid =
 
 listRsvps :: Connection -> IO [RsvpAdmin]
 listRsvps conn = query_ conn
-  "SELECT id::text, name, status, guest_count, dietary, invitee_id, invitation_code_used, created_at::text FROM rsvps ORDER BY created_at DESC"
+  ("SELECT r.id::text, r.name, r.status, r.guest_count, r.dietary, r.invitee_id, r.invitation_code_used, " <>
+   "i.name, i.code, r.created_at::text FROM rsvps r LEFT JOIN invitees i ON i.id = r.invitee_id ORDER BY r.created_at DESC")
 
 linkRsvpInvitee :: Connection -> Text -> LinkInviteeBody -> IO (Maybe RsvpAdmin)
 linkRsvpInvitee conn rid body = do
   rows <- query conn
-    "UPDATE rsvps SET invitee_id = ?, updated_at = NOW() WHERE id = ?::uuid RETURNING id::text, name, status, guest_count, dietary, invitee_id, invitation_code_used, created_at::text"
+    ("WITH updated AS (UPDATE rsvps SET invitee_id = ?, updated_at = NOW() WHERE id = ?::uuid RETURNING *) " <>
+     "SELECT r.id::text, r.name, r.status, r.guest_count, r.dietary, r.invitee_id, r.invitation_code_used, i.name, i.code, r.created_at::text " <>
+     "FROM updated r LEFT JOIN invitees i ON i.id = r.invitee_id")
     (linkInviteeId body, rid)
   pure $ case rows of
     []    -> Nothing
     (r:_) -> Just r
+
+deleteRsvp :: Connection -> Text -> IO ()
+deleteRsvp conn rid =
+  void $ execute conn "DELETE FROM rsvps WHERE id = ?::uuid" (Only rid)
 
 insertVideo :: Connection -> Int64 -> SavedVideo -> IO Text
 insertVideo conn iid video = do
@@ -252,6 +285,13 @@ getVideo conn vid = do
     []    -> Nothing
     (v:_) -> Just v
 
+deleteVideo :: Connection -> Text -> IO (Maybe Text)
+deleteVideo conn vid = do
+  rows <- query conn "DELETE FROM videos WHERE id = ?::uuid RETURNING stored_filename" (Only vid)
+  pure $ case rows of
+    []             -> Nothing
+    (Only name:_) -> Just name
+
 inviteeSelectByCode :: Query
 inviteeSelectByCode =
   "SELECT id, name, code, max_guests, notes, created_at::text FROM invitees WHERE code = ? LIMIT 1"
@@ -265,6 +305,9 @@ nonEmpty :: Text -> Maybe Text
 nonEmpty value =
   let stripped = T.strip value
    in if T.null stripped then Nothing else Just stripped
+
+capGuests :: Int -> Int
+capGuests = max 1 . min 2
 
 statusToText :: AttendanceStatus -> Text
 statusToText Attending = "attending"

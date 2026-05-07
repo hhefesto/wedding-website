@@ -30,18 +30,17 @@ bodyW = do
     introOverlay
     progressBar
     heroSection
-    rsvpOpenE <- rsvpSection
+    rsvpSection
     ubicacionSection
     dressCodeSection
     mesaRegalosSection
     videoOpenE' <- videoMsgSection
     fixedNav
     backToTop
-    rsvpOverlay rsvpOpenE
     pure videoOpenE'
   videoUploadOverlay videoOpenE
   pb <- getPostBuild
-  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> videoUploadShimJS <> ";" <> videoUploadProgressJS)) <$ pb
+  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> rsvpInlinePrefillJS <> ";" <> videoUploadShimJS <> ";" <> videoUploadProgressJS)) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -113,6 +112,10 @@ navHighlightingJS =
 videoUploadShimJS :: String
 videoUploadShimJS =
   "(function(){var identified=false;function code(){var p=new URLSearchParams(location.search||'');var c=p.get('code')||'';try{if(c)localStorage.setItem('weddingInvitationCode',c);else c=localStorage.getItem('weddingInvitationCode')||'';}catch(e){}return c;}function mark(v){identified=!!v;window.__weddingRsvpIdentified=identified;var b=document.getElementById('video-upload-open');if(b){b.classList.toggle('is-disabled',!identified);b.setAttribute('aria-disabled',identified?'false':'true');}}function buttonMessage(){var b=document.getElementById('video-upload-open');if(!b)return null;var m=document.getElementById('video-login-message');if(!m){m=document.createElement('p');m.id='video-login-message';m.className='video-login-message';b.parentNode.insertBefore(m,b.nextSibling);}return m;}function setButtonMessage(t){var m=buttonMessage();if(m)m.textContent=t||'';}function fillCode(){var c=code();var i=document.getElementById('rsvp-invitation-code');if(i&&c&&i.value!==c){i.value=c;i.dispatchEvent(new Event('input',{bubbles:true}));}return c;}function checkSession(){return fetch('/api/rsvp/me',{credentials:'same-origin'}).then(function(r){mark(r.ok);return r.ok;}).catch(function(){mark(false);return false;});}function rsvpLogin(){var c=code();if(!c||window.__weddingRsvpLoginTried)return;window.__weddingRsvpLoginTried=1;fetch('/api/rsvp/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).then(function(r){if(r.ok){mark(true);setButtonMessage('');}}).catch(function(){});}function watchRsvpSubmit(){if(window.__weddingRsvpSubmitWatchReady)return;window.__weddingRsvpSubmitWatchReady=1;var open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__weddingRsvpUrl=String(u||'');return open.apply(this,arguments);};var send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__weddingRsvpUrl==='/api/rsvp')this.addEventListener('load',function(){if(this.status>=200&&this.status<300){mark(true);setButtonMessage('');}});return send.apply(this,arguments);};}function openRsvpFromLink(){if(window.__weddingRsvpAutoOpened||!code()||location.hash!=='#rsvp')return;var b=document.getElementById('rsvp-open');if(!b)return;window.__weddingRsvpAutoOpened=1;b.click();setTimeout(fillCode,80);}function start(){watchRsvpSubmit();fillCode();openRsvpFromLink();var openBtn=document.getElementById('video-upload-open');if(openBtn&&!openBtn.dataset.gated){openBtn.dataset.gated='1';openBtn.addEventListener('click',function(ev){if(!identified){ev.preventDefault();ev.stopImmediatePropagation();setButtonMessage('Primero identificate en la seccion RSVP con tu invitacion.');var r=document.getElementById('rsvp');if(r)r.scrollIntoView({behavior:'smooth'});}},true);}var f=document.getElementById('video-upload-form');if(!f||f.dataset.ready)return;f.dataset.ready='1';var s=document.getElementById('video-upload-status');var b=document.getElementById('video-upload-submit');function set(m,e){s.textContent=m||'';s.classList.toggle('is-error',!!e);}f.addEventListener('submit',function(ev){ev.preventDefault();var file=document.getElementById('video-upload-file').files[0];if(!file){set('Elige un video primero.',true);return;}b.disabled=true;fetch('/api/rsvp/me',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('no rsvp');mark(true);var d=new FormData(f);set('Subiendo...',false);return fetch('/api/videos',{method:'POST',body:d,credentials:'same-origin'});}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(){f.reset();set('Video recibido. Gracias.',false);}).catch(function(){mark(false);set('Confirma tu RSVP con tu codigo de invitacion antes de subir video.',true);}).finally(function(){b.disabled=false;});});}mark(false);checkSession();rsvpLogin();start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
+
+rsvpInlinePrefillJS :: String
+rsvpInlinePrefillJS =
+  "(function(){function set(id,v){var el=document.getElementById(id);if(el&&v&&el.value!==v){el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));}}function start(){if(window.__weddingRsvpInlinePrefill)return;var c=new URLSearchParams(location.search||'').get('code')||'';if(!c)return;window.__weddingRsvpInlinePrefill=1;set('rsvp-invitation-code',c);fetch('/api/invite?code='+encodeURIComponent(c),{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(i){set('rsvp-name',i.name||'');}).catch(function(){});}start();var n=0,t=setInterval(function(){start();if(++n>100)clearInterval(t);},50);})()"
 
 videoUploadFixJS :: String
 videoUploadFixJS =
@@ -194,7 +197,7 @@ dressCodeSection =
 
 -- ── RSVP ─────────────────────────────────────────────────────────────────────
 
-rsvpSection :: DomBuilder t m => m (Event t ())
+rsvpSection :: MonadWidget t m => m ()
 rsvpSection =
   secImage "rsvp" $ do
     elAttr "img"
@@ -205,12 +208,55 @@ rsvpSection =
       ) blank
     elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $ text "R\233pondez s'il vous pla\238t"
-      e <- elAttr "div" ("class" =: "glass rect rsvp-confirm" <> "data-reveal" =: "") $ do
+      elAttr "div" ("class" =: "glass rect rsvp-confirm rsvp-inline" <> "data-reveal" =: "") $ mdo
         el "p" $ text "Por favor responde si podr\225s acompa\241arnos"
         el "p" $ text "antes del 10 de septiembre de 2026."
-        (btnEl, _) <- elAttr' "button" ("id" =: "rsvp-open" <> "class" =: "rsvp-btn") $ text "Confirmar \8594"
-        return (() <$ domEvent Click btnEl)
-      return e
+        elAttr "p" ("class" =: "rsvp-adults-note") $ text "Celebraci\243n solo para adultos. Cada RSVP permite hasta 2 adultos."
+        nameEl <- inputElement $ def
+          & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
+            ("id" =: "rsvp-name" <> "class" =: "rsvp-input" <> "placeholder" =: "Tu nombre" <> "required" =: "required")
+        codeEl <- inputElement $ def
+          & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
+            ("id" =: "rsvp-invitation-code" <> "type" =: "hidden")
+        declineEl <- elAttr "label" ("class" =: "rsvp-check") $ do
+          el <- inputElement $ def
+            & inputElementConfig_elementConfig . elementConfig_initialAttributes .~ ("type" =: "checkbox" <> "id" =: "rsvp-decline")
+          text " No podremos asistir"
+          pure el
+        let declinedD = _inputElement_checked declineEl
+        dyn_ $ ffor declinedD $ \declined ->
+          if declined
+            then elAttr "p" ("class" =: "rsvp-step-label") $ text "Registraremos tu respuesta con 0 adultos."
+            else blank
+        dyn_ $ ffor declinedD $ \declined ->
+          if declined then blank else elAttr "p" ("class" =: "rsvp-step-label") $ text "\191Cu\225ntos adultos asistir\225n?"
+        countDyn <- foldDyn ($) (1 :: Int) $ leftmost
+          [ (\n -> max 1 (n - 1)) <$ minusE
+          , (\n -> min 2 (n + 1)) <$ plusE
+          ]
+        (minusE, plusE) <- elDynAttr "div"
+          (ffor declinedD $ \declined -> "class" =: "rsvp-counter" <> if declined then "style" =: "display:none" else mempty) $ do
+          (minEl, _) <- elAttr' "button" ("class" =: "rsvp-counter-btn" <> "type" =: "button") $ text "\8722"
+          el "span" $ dynText (T.pack . show <$> countDyn)
+          (plusEl, _) <- elAttr' "button" ("class" =: "rsvp-counter-btn" <> "type" =: "button") $ text "+"
+          pure (domEvent Click minEl, domEvent Click plusEl)
+        dietaryEl <- inputElement $ def
+          & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
+            ("type" =: "text" <> "class" =: "rsvp-input" <> "placeholder" =: "Restricciones alimentarias (opcional)")
+        let statusD = ffor declinedD $ \d -> if d then Declined else Attending
+            guestsD = zipDynWith (\d n -> if d then 0 else n) declinedD countDyn
+            rsvpDyn = RsvpRequest <$> (T.strip <$> _inputElement_value nameEl) <*> (T.strip <$> _inputElement_value codeEl) <*> statusD <*> guestsD <*> _inputElement_value dietaryEl <*> pure []
+            reqDyn = ffor rsvpDyn $ \r -> XhrRequest "POST" "/api/rsvp" $ def
+              & xhrRequestConfig_headers .~ ("Content-Type" =: "application/json")
+              & xhrRequestConfig_sendData .~ TE.decodeUtf8 (BL.toStrict (encode r))
+        (sendBtnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn rsvp-send-btn" <> "type" =: "button") $ text "Enviar confirmaci\243n \8594"
+        respE <- performRequestAsync (current reqDyn `tag` domEvent Click sendBtnEl)
+        let resultE = ffor respE $ \resp -> if xhrSuccess resp then StatusSuccess else StatusError
+        statusDyn <- holdDyn StatusIdle $ leftmost [StatusSending <$ domEvent Click sendBtnEl, resultE]
+        elDynAttr "p"
+          (ffor statusDyn $ \s -> "class" =: "rsvp-status" <> if statusVisible s then mempty else "style" =: "display:none")
+          $ dynText (statusMsg <$> statusDyn)
+        pure ()
 
 -- ── RSVP overlay — invitation-code response flow ─────────────────────────────
 
@@ -290,7 +336,7 @@ rsvpOverlay openE = mdo
             dyn_ $ ffor summaryDyn $ \rows ->
               forM_ rows $ \row -> el "p" $ text row
 
-          let rsvpDyn = RsvpRequest <$> (T.strip <$> codeD') <*> statusD' <*> guestD' <*> dietaryD' <*> pure []
+          let rsvpDyn = RsvpRequest <$> pure "" <*> (T.strip <$> codeD') <*> statusD' <*> guestD' <*> dietaryD' <*> pure []
               reqDyn  = ffor rsvpDyn $ \r ->
                 XhrRequest "POST" "/api/rsvp" $ def
                   & xhrRequestConfig_headers     .~ ("Content-Type" =: "application/json")
@@ -379,7 +425,10 @@ statusMsg s = case s of
   StatusIdle    -> ""
   StatusSending -> "Enviando confirmaci\243n\8230"
   StatusSuccess -> "\161Respuesta recibida! Gracias."
-  StatusError   -> "Hubo un problema al enviar. Revisa tu c\243digo e int\233ntalo de nuevo."
+  StatusError   -> "Hubo un problema al enviar. Revisa tu informaci\243n e int\233ntalo de nuevo."
+
+xhrSuccess :: XhrResponse -> Bool
+xhrSuccess resp = let s = _xhrResponse_status resp in s >= 200 && s < 300
 
 -- ── MESA DE REGALOS ──────────────────────────────────────────────────────────
 
@@ -1093,6 +1142,10 @@ siteCSS = T.unlines
   , "  font-size: .85rem;"
   , "  color: rgba(255,255,255,.85);"
   , "}"
+  , ".rsvp-inline { display: grid; gap: .72rem; }"
+  , ".rsvp-adults-note { color: #ffdfb4; line-height: 1.55; }"
+  , ".rsvp-check { display: block; color: rgba(255,255,255,.9); line-height: 1.6; }"
+  , ".rsvp-check input { width: auto; margin-right: .35rem; }"
   , ".rsvp-whatsapp-btn {"
   , "  background: rgba(37,211,102,.16);"
   , "  border-color: rgba(37,211,102,.5);"
