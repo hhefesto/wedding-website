@@ -132,7 +132,9 @@ submitRsvpRequest conn r = do
                 , inviteeId invitee
                 , Just code
                 )
-              pure (Right (SubmittedRsvp (Just invitee) (oneOnly "submitRsvpRequest" rows) name))
+              let rid = oneOnly "submitRsvpRequest" rows
+              void $ execute conn "UPDATE videos SET rsvp_id = ?::uuid WHERE invitee_id = ? AND rsvp_id IS NULL" (rid, inviteeId invitee)
+              pure (Right (SubmittedRsvp (Just invitee) rid name))
 
 findInviteeByCode :: Connection -> Text -> IO (Maybe Invitee)
 findInviteeByCode conn code = do
