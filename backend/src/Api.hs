@@ -31,7 +31,7 @@ import           System.Process             (readProcessWithExitCode)
 
 import           Auth                       (generateToken, verifyPassword)
 import qualified Db
-import           Upload                     (saveVideoUpload)
+import           Upload                     (SavedVideo (..), saveVideoUpload)
 import           Wedding.Types              (InviteLookup, Invitee (..), InviteeInput (..),
                                              LinkInviteeBody, LoginRequest (..),
                                              RsvpLoginRequest (..),
@@ -119,7 +119,7 @@ rsvpH var r = do
 rsvpLoginH :: ConnVar -> RsvpLoginRequest -> Handler (SetCookie NoContent)
 rsvpLoginH var req = do
   mInvitee <- withDb var (`Db.getInviteeByCode` rsvpLoginCode req)
-  invitee <- maybe (throwError err401) pure mInvitee
+  invitee <- maybe (throwError err400 { errBody = textBody "Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto." }) pure mInvitee
   token <- liftIO generateToken
   withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
   pure (addHeader (rsvpSessionCookie token) NoContent)
@@ -136,7 +136,8 @@ videoH cfg var mCookie multipart = do
   case saved of
     Left msg -> throwError err400 { errBody = textBody msg }
     Right video -> do
-      vid <- withDb var (\conn -> Db.insertVideo conn (inviteeId invitee) video)
+      let attributedVideo = video { savedSubmitterName = Just (inviteeName invitee) }
+      vid <- withDb var (\conn -> Db.insertVideo conn (inviteeId invitee) attributedVideo)
       pure (VideoSubmittedResponse vid)
 
 loginH :: AppConfig -> ConnVar -> LoginRequest -> Handler (SetCookie NoContent)

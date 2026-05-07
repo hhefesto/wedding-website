@@ -34,17 +34,17 @@ saveVideoUpload dir maxBytes multipart =
     []     -> pure (Left "No video file was submitted.")
     (f:_)  -> do
       let contentType = fdFileCType f
-      if not ("video/" `T.isPrefixOf` contentType)
-        then pure (Left "Only video uploads are accepted.")
+          original = safeOriginalName (fdFileName f)
+      if not (isVideoUpload contentType original)
+        then pure (Left "El archivo debe ser un video.")
         else do
           size <- getFileSize (fdPayload f)
           if size <= 0 || size > maxBytes
-            then pure (Left "Video file is empty or exceeds the configured size limit.")
+            then pure (Left "El video esta vacio o supera el limite de tamano.")
             else do
               createDirectoryIfMissing True dir
               uuid <- nextRandom
-              let original = safeOriginalName (fdFileName f)
-                  ext = safeExtension original
+              let ext = safeExtension original
                   stored = toText uuid <> ext
                   target = dir </> T.unpack stored
               copyFile (fdPayload f) target
@@ -81,3 +81,19 @@ safeExtension name =
 
 isAllowed :: Char -> Bool
 isAllowed c = isAlphaNum c || c `elem` ("._-" :: String)
+
+isVideoUpload :: Text -> Text -> Bool
+isVideoUpload contentType filename =
+  "video/" `T.isPrefixOf` T.toLower contentType || T.toLower (safeExtension filename) `elem` videoExtensions
+
+videoExtensions :: [Text]
+videoExtensions =
+  [ ".mp4"
+  , ".mov"
+  , ".m4v"
+  , ".webm"
+  , ".avi"
+  , ".mkv"
+  , ".3gp"
+  , ".3gpp"
+  ]

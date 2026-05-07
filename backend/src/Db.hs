@@ -86,7 +86,7 @@ submitRsvpRequest conn r = do
     Just code -> do
       mInvitee <- findInviteeByCode conn code
       case mInvitee of
-        Nothing -> pure (Left "No encontramos esa invitacion.")
+        Nothing -> pure (Left "Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.")
         Just invitee ->
           case validateRsvp invitee r of
             Left msg -> pure (Left msg)
