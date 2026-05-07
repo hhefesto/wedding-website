@@ -6,6 +6,7 @@ import           Data.Aeson               (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy     as BL
 import           Control.Monad            (void)
 import           Data.Map                 (Map)
+import qualified Data.Map                 as Map
 import           Data.Int                 (Int64)
 import           Data.Text                (Text)
 import qualified Data.Text                as T
@@ -160,7 +161,7 @@ adminRsvpsPanel inviteesDyn rsvpsDyn = elAttr "div" ("class" =: "admin-card") $ 
     text ") - "
     dynText (T.pack . show . totalGuests <$> rsvpsDyn)
     text " adultos"
-  actionDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList rsvpsDyn (adminRsvpRow inviteesDyn)
+  actionDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList rsvpsDyn (adminRsvpRow inviteesDyn rsvpsDyn)
   let actionE = switchDyn (leftmost <$> actionDyn)
       reqE = ffor actionE $ \action -> case action of
         LinkRsvp rid miid -> adminJsonRequest "PUT" ("/api/admin/rsvps/" <> rid <> "/invitee") (LinkInviteeBody miid)
@@ -168,21 +169,24 @@ adminRsvpsPanel inviteesDyn rsvpsDyn = elAttr "div" ("class" =: "admin-card") $ 
   respE <- performRequestAsync reqE
   pure (xhrOk respE)
 
-adminRsvpRow :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t RsvpAdmin -> m (Event t RsvpAdminAction)
-adminRsvpRow inviteesDyn rsvpDyn = elAttr "article" ("class" =: "admin-row") $ do
+adminRsvpRow :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t [RsvpAdmin] -> Dynamic t RsvpAdmin -> m (Event t RsvpAdminAction)
+adminRsvpRow inviteesDyn rsvpsDyn rsvpDyn = elAttr "article" ("class" =: "admin-row") $ do
   el "div" $ do
     el "strong" $ dynText (raName <$> rsvpDyn)
     el "p" $ dynText (rsvpMeta <$> rsvpDyn)
     el "p" $ dynText (rsvpInviteeMeta <$> rsvpDyn)
     el "p" $ dynText (maybe "" id . raDietary <$> rsvpDyn)
   elAttr "div" ("class" =: "admin-row-actions") $ do
-    inviteeIdEl <- adminInput "number" "Invitado ID" ""
-    elAttr "p" ("class" =: "admin-muted tiny") $ dynText (inviteeOptionsText <$> inviteesDyn)
+    pb <- getPostBuild
+    let selectedInviteeD = maybe "" (T.pack . show) . raInviteeId <$> rsvpDyn
+    selectedDyn <- dropdown "" (inviteeDropdownOptions <$> inviteesDyn <*> rsvpsDyn <*> rsvpDyn) $ def
+      & dropdownConfig_attributes .~ constDyn ("class" =: "admin-input")
+      & dropdownConfig_setValue .~ leftmost [current selectedInviteeD `tag` pb, updated selectedInviteeD]
     (linkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Ligar"
     (unlinkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $ text "Sin invitacion"
     (deleteBtn, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar RSVP"
     let ridD = raId <$> rsvpDyn
-        parsedIdD = parseMaybeInt64 <$> _inputElement_value inviteeIdEl
+        parsedIdD = parseMaybeInt64 <$> _dropdown_value selectedDyn
     pure $ leftmost
       [ attachWith LinkRsvp (current ridD) (current parsedIdD `tag` domEvent Click linkBtn)
       , attachWith (\rid _ -> LinkRsvp rid Nothing) (current ridD) (domEvent Click unlinkBtn)
@@ -302,9 +306,14 @@ rsvpInviteeMeta r =
     Nothing -> "Sin invitacion asociada"
     Just iid -> "Invitacion: " <> maybe ("ID " <> T.pack (show iid)) id (raInviteeName r) <> " - Codigo: " <> maybe "none" id (raInviteeCode r)
 
-inviteeOptionsText :: [Invitee] -> Text
-inviteeOptionsText invitees =
-  "IDs: " <> T.intercalate ", " (map (\i -> T.pack (show (inviteeId i)) <> "=" <> inviteeName i) invitees)
+inviteeDropdownOptions :: [Invitee] -> [RsvpAdmin] -> RsvpAdmin -> Map Text Text
+inviteeDropdownOptions invitees rsvps rsvp = Map.fromList $
+  ("", "Selecciona invitacion libre") : map optionFor (filter available invitees)
+  where
+    currentId = raInviteeId rsvp
+    available invitee = Just (inviteeId invitee) == currentId || inviteeId invitee `notElem` assignedIds
+    assignedIds = [iid | other <- rsvps, Just iid <- [raInviteeId other], Just iid /= currentId]
+    optionFor invitee = (T.pack (show (inviteeId invitee)), inviteeName invitee <> " - " <> maybe "sin codigo" id (inviteeCode invitee))
 
 totalGuests :: [RsvpAdmin] -> Int
 totalGuests = sum . map (\r -> if raStatus r == Attending then raGuestCount r else 0)
@@ -313,7 +322,12 @@ videoMeta :: VideoAdmin -> Text
 videoMeta v = vaContentType v <> " - " <> T.pack (show (fromIntegral (vaSizeBytes v) / (1048576 :: Double))) <> " MB - " <> vaCreatedAt v
 
 videoSubmitterMeta :: VideoAdmin -> Text
-videoSubmitterMeta v = maybe "anonimo" id (vaSubmitterName v) <> " " <> maybe "" id (vaMessage v)
+videoSubmitterMeta v = T.intercalate " | " (filter (not . T.null)
+  [ "Subido por: " <> maybe "anonimo" id (vaSubmitterName v)
+  , "RSVP: " <> maybe "sin RSVP" id (vaRsvpName v)
+  , "Invitacion: " <> maybe "sin invitacion" id (vaInviteeName v)
+  , maybe "" ("Mensaje: " <>) (vaMessage v)
+  ])
 
 videoDownloadAttrs :: VideoAdmin -> Map Text Text
 videoDownloadAttrs v =

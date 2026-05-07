@@ -8,6 +8,7 @@ module Api
   , app
   ) where
 
+import           Control.Applicative        ((<|>))
 import           Control.Concurrent.MVar    (MVar, withMVar)
 import           Control.Exception          (SomeException, try)
 import           Control.Monad.IO.Class     (liftIO)
@@ -115,20 +116,18 @@ rsvpH var r = do
   result <- withDb var (`Db.submitRsvpRequest` r)
   case result of
     Left msg -> throwError err400 { errBody = textBody msg }
-    Right invitee -> do
-      if inviteeId invitee > 0
-        then do
-          token <- liftIO generateToken
-          withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
-          pure (addHeader (rsvpSessionCookie token) NoContent)
-        else pure (addHeader "" NoContent)
+    Right submitted -> do
+      token <- liftIO generateToken
+      let miid = inviteeId <$> Db.submittedInvitee submitted
+      withDb var (\conn -> Db.insertRsvpSession conn token miid (Just (Db.submittedRsvpId submitted)))
+      pure (addHeader (rsvpSessionCookie token) NoContent)
 
 rsvpLoginH :: ConnVar -> RsvpLoginRequest -> Handler (SetCookie NoContent)
 rsvpLoginH var req = do
   mInvitee <- withDb var (`Db.getInviteeByCode` rsvpLoginCode req)
   invitee <- maybe (throwError err400 { errBody = textBody "Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto." }) pure mInvitee
   token <- liftIO generateToken
-  withDb var (\conn -> Db.insertRsvpSession conn token (inviteeId invitee))
+  withDb var (\conn -> Db.insertRsvpSession conn token (Just (inviteeId invitee)) Nothing)
   pure (addHeader (rsvpSessionCookie token) NoContent)
 
 rsvpMeH :: ConnVar -> Maybe Text -> Handler NoContent
@@ -138,13 +137,13 @@ rsvpMeH var mCookie = do
 
 videoH :: AppConfig -> ConnVar -> Maybe Text -> MultipartData Tmp -> Handler VideoSubmittedResponse
 videoH cfg var mCookie multipart = do
-  invitee <- requireRsvp var mCookie
+  session <- requireRsvp var mCookie
   saved <- liftIO $ saveVideoUpload (appVideoDir cfg) (appVideoMaxBytes cfg) multipart
   case saved of
     Left msg -> throwError err400 { errBody = textBody msg }
     Right video -> do
-      let attributedVideo = video { savedSubmitterName = Just (inviteeName invitee) }
-      vid <- withDb var (\conn -> Db.insertVideo conn (inviteeId invitee) attributedVideo)
+      let attributedVideo = video { savedSubmitterName = sessionDisplayName session }
+      vid <- withDb var (\conn -> Db.insertVideo conn session attributedVideo)
       pure (VideoSubmittedResponse vid)
 
 loginH :: AppConfig -> ConnVar -> LoginRequest -> Handler (SetCookie NoContent)
@@ -263,13 +262,16 @@ requireAdmin var mCookie =
       valid <- withDb var (`Db.lookupSession` token)
       if valid then pure () else throwError err401
 
-requireRsvp :: ConnVar -> Maybe Text -> Handler Invitee
+requireRsvp :: ConnVar -> Maybe Text -> Handler Db.RsvpSession
 requireRsvp var mCookie =
   case extractCookie rsvpCookieName mCookie of
     Nothing -> throwError err401
     Just token -> do
       mInvitee <- withDb var (`Db.lookupRsvpSession` token)
       maybe (throwError err401) pure mInvitee
+
+sessionDisplayName :: Db.RsvpSession -> Maybe Text
+sessionDisplayName session = Db.sessionInviteeName session <|> Db.sessionRsvpName session
 
 extractCookie :: Text -> Maybe Text -> Maybe Text
 extractCookie name mCookie = do

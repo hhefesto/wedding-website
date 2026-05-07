@@ -227,6 +227,10 @@ data VideoAdmin = VideoAdmin
   , vaContentType      :: Text
   , vaSizeBytes        :: Int64
   , vaInviteeId        :: Maybe Int64
+  , vaRsvpId           :: Maybe Text
+  , vaInviteeName      :: Maybe Text
+  , vaInviteeCode      :: Maybe Text
+  , vaRsvpName         :: Maybe Text
   , vaSubmitterName    :: Maybe Text
   , vaMessage          :: Maybe Text
   , vaCreatedAt        :: Text
@@ -240,6 +244,10 @@ instance ToJSON VideoAdmin where
     , "contentType"      .= vaContentType v
     , "sizeBytes"        .= vaSizeBytes v
     , "inviteeId"        .= vaInviteeId v
+    , "rsvpId"           .= vaRsvpId v
+    , "inviteeName"      .= vaInviteeName v
+    , "inviteeCode"      .= vaInviteeCode v
+    , "rsvpName"         .= vaRsvpName v
     , "submitterName"    .= vaSubmitterName v
     , "message"          .= vaMessage v
     , "createdAt"        .= vaCreatedAt v
@@ -254,6 +262,10 @@ instance FromJSON VideoAdmin where
       <*> o .:  "contentType"
       <*> o .:  "sizeBytes"
       <*> o .:? "inviteeId"
+      <*> o .:? "rsvpId"
+      <*> o .:? "inviteeName"
+      <*> o .:? "inviteeCode"
+      <*> o .:? "rsvpName"
       <*> o .:? "submitterName"
       <*> o .:? "message"
       <*> o .:  "createdAt"

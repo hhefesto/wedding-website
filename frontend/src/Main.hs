@@ -115,7 +115,7 @@ videoUploadShimJS =
 
 rsvpInlinePrefillJS :: String
 rsvpInlinePrefillJS =
-  "(function(){function set(id,v){var el=document.getElementById(id);if(el&&v&&el.value!==v){el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));}}function start(){if(window.__weddingRsvpInlinePrefill)return;var c=new URLSearchParams(location.search||'').get('code')||'';if(!c)return;window.__weddingRsvpInlinePrefill=1;set('rsvp-invitation-code',c);fetch('/api/invite?code='+encodeURIComponent(c),{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(i){set('rsvp-name',i.name||'');}).catch(function(){});}start();var n=0,t=setInterval(function(){start();if(++n>100)clearInterval(t);},50);})()"
+  "(function(){function set(id,v){var el=document.getElementById(id);if(el&&el.value!==v){el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));}}function start(){var c=new URLSearchParams(location.search||'').get('code')||'';if(!c){set('rsvp-invitation-code','');return;}if(window.__weddingRsvpInlinePrefill)return;window.__weddingRsvpInlinePrefill=1;set('rsvp-invitation-code',c);fetch('/api/invite?code='+encodeURIComponent(c),{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(i){set('rsvp-name',i.name||'');}).catch(function(){});}start();var n=0,t=setInterval(function(){start();if(++n>100)clearInterval(t);},50);})()"
 
 videoUploadFixJS :: String
 videoUploadFixJS =
@@ -251,7 +251,7 @@ rsvpSection =
               & xhrRequestConfig_sendData .~ TE.decodeUtf8 (BL.toStrict (encode r))
         (sendBtnEl, _) <- elAttr' "button" ("class" =: "rsvp-btn rsvp-send-btn" <> "type" =: "button") $ text "Enviar confirmaci\243n \8594"
         respE <- performRequestAsync (current reqDyn `tag` domEvent Click sendBtnEl)
-        let resultE = ffor respE $ \resp -> if xhrSuccess resp then StatusSuccess else StatusError
+        let resultE = ffor respE $ \resp -> if xhrSuccess resp then StatusSuccess else StatusError (xhrErrorText resp)
         statusDyn <- holdDyn StatusIdle $ leftmost [StatusSending <$ domEvent Click sendBtnEl, resultE]
         elDynAttr "p"
           (ffor statusDyn $ \s -> "class" =: "rsvp-status" <> if statusVisible s then mempty else "style" =: "display:none")
@@ -355,7 +355,7 @@ rsvpOverlay openE = mdo
           let resultE = ffor respE $ \resp ->
                 case _xhrResponse_status resp of
                   s | s == 200 || s == 204 -> StatusSuccess
-                  _                        -> StatusError
+                  _                        -> StatusError (xhrErrorText resp)
           statusDyn <- holdDyn StatusIdle $ leftmost
             [ StatusSending <$ sendE
             , resultE
@@ -406,7 +406,7 @@ rsvpChoiceButton label = do
 
 -- ── RSVP submission status ────────────────────────────────────────────────────
 
-data RsvpStatus = StatusIdle | StatusSending | StatusSuccess | StatusError
+data RsvpStatus = StatusIdle | StatusSending | StatusSuccess | StatusError Text
   deriving (Eq)
 
 statusBtnLabel :: RsvpStatus -> Text
@@ -414,7 +414,7 @@ statusBtnLabel s = case s of
   StatusIdle    -> "Enviar confirmaci\243n \8594"
   StatusSending -> "Enviando\8230"
   StatusSuccess -> "\161Enviado!"
-  StatusError   -> "Reintentar"
+  StatusError _ -> "Reintentar"
 
 statusVisible :: RsvpStatus -> Bool
 statusVisible StatusIdle = False
@@ -425,10 +425,16 @@ statusMsg s = case s of
   StatusIdle    -> ""
   StatusSending -> "Enviando confirmaci\243n\8230"
   StatusSuccess -> "\161Respuesta recibida! Gracias."
-  StatusError   -> "Hubo un problema al enviar. Revisa tu informaci\243n e int\233ntalo de nuevo."
+  StatusError msg -> msg
 
 xhrSuccess :: XhrResponse -> Bool
 xhrSuccess resp = let s = _xhrResponse_status resp in s >= 200 && s < 300
+
+xhrErrorText :: XhrResponse -> Text
+xhrErrorText resp =
+  case T.strip <$> _xhrResponse_responseText resp of
+    Just msg | not (T.null msg) -> T.dropAround (== '"') msg
+    _ -> "Hubo un problema al enviar. Revisa tu informaci\243n e int\233ntalo de nuevo."
 
 -- ── MESA DE REGALOS ──────────────────────────────────────────────────────────
 
@@ -1109,7 +1115,8 @@ siteCSS = T.unlines
   , "  align-items: center;"
   , "  justify-content: center;"
   , "  gap: 1.8rem;"
-  , "  margin: 1rem 0 1.4rem;"
+  , "  width: fit-content;"
+  , "  margin: 1rem auto 1.4rem;"
   , "}"
   , ".rsvp-counter-btn {"
   , "  background: rgba(255,255,255,.10);"

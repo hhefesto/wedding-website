@@ -1,5 +1,7 @@
 module Db
   ( initDb
+  , SubmittedRsvp (..)
+  , RsvpSession (..)
   , lookupInvite
   , submitRsvpRequest
   , insertSession
@@ -35,9 +37,23 @@ import           Database.PostgreSQL.Simple.FromRow
 import           System.Environment         (lookupEnv)
 import           Upload                     (SavedVideo (..))
 import           Wedding.Types              (AttendanceStatus (..), InviteLookup (..),
-                                             Invitee (..), InviteeInput (..),
-                                             LinkInviteeBody (..), RsvpAdmin (..),
-                                             RsvpRequest (..), VideoAdmin (..))
+                                              Invitee (..), InviteeInput (..),
+                                              LinkInviteeBody (..), RsvpAdmin (..),
+                                              RsvpRequest (..), VideoAdmin (..))
+
+data SubmittedRsvp = SubmittedRsvp
+  { submittedInvitee :: Maybe Invitee
+  , submittedRsvpId  :: Text
+  , submittedName    :: Text
+  }
+
+data RsvpSession = RsvpSession
+  { sessionInviteeId   :: Maybe Int64
+  , sessionInviteeName :: Maybe Text
+  , sessionInviteeCode :: Maybe Text
+  , sessionRsvpId      :: Maybe Text
+  , sessionRsvpName    :: Maybe Text
+  }
 
 instance FromRow Invitee where
   fromRow = Invitee <$> field <*> field <*> field <*> field <*> field <*> field
@@ -57,7 +73,7 @@ instance FromRow RsvpAdmin where
     pure (RsvpAdmin rid rname status count rdietary rinvitee code inviteeName inviteeCode created)
 
 instance FromRow VideoAdmin where
-  fromRow = VideoAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = VideoAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 initDb :: IO Connection
 initDb = do
@@ -83,7 +99,7 @@ lookupInvite conn rawCode =
           , ilGuestCount = mCount
           }
 
-submitRsvpRequest :: Connection -> RsvpRequest -> IO (Either Text Invitee)
+submitRsvpRequest :: Connection -> RsvpRequest -> IO (Either Text SubmittedRsvp)
 submitRsvpRequest conn r = do
   let submittedName = nonEmpty (rrName r)
   case nonEmpty (rrInvitationCode r) of
@@ -94,10 +110,10 @@ submitRsvpRequest conn r = do
           name <- case submittedName of
             Nothing -> pure ""
             Just n  -> pure n
-          void $ execute conn
-            "INSERT INTO rsvps (name, status, guest_count, dietary, invitee_id, invitation_code_used, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, NOW())"
+          rows :: [Only Text] <- query conn
+            "INSERT INTO rsvps (name, status, guest_count, dietary, invitee_id, invitation_code_used, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, NOW()) RETURNING id::text"
             (name, statusToText (rrStatus r), count, nonEmpty (rrDietary r))
-          pure (Right (Invitee 0 name Nothing 2 Nothing ""))
+          pure (Right (SubmittedRsvp Nothing (oneOnly "submitRsvpRequest" rows) name))
     Just code -> do
       mInvitee <- findInviteeByCode conn code
       case mInvitee of
@@ -107,8 +123,8 @@ submitRsvpRequest conn r = do
             Left msg -> pure (Left msg)
             Right count -> do
               let name = maybe (inviteeName invitee) id submittedName
-              void $ execute conn
-                "INSERT INTO rsvps (name, status, guest_count, dietary, invitee_id, invitation_code_used, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW()) ON CONFLICT (invitee_id) WHERE invitee_id IS NOT NULL DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, guest_count = EXCLUDED.guest_count, dietary = EXCLUDED.dietary, invitation_code_used = EXCLUDED.invitation_code_used, updated_at = NOW()"
+              rows :: [Only Text] <- query conn
+                "INSERT INTO rsvps (name, status, guest_count, dietary, invitee_id, invitation_code_used, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW()) ON CONFLICT (invitee_id) WHERE invitee_id IS NOT NULL DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, guest_count = EXCLUDED.guest_count, dietary = EXCLUDED.dietary, invitation_code_used = EXCLUDED.invitation_code_used, updated_at = NOW() RETURNING id::text"
                 ( name
                 , statusToText (rrStatus r)
                 , count
@@ -116,7 +132,7 @@ submitRsvpRequest conn r = do
                 , inviteeId invitee
                 , Just code
                 )
-              pure (Right invitee)
+              pure (Right (SubmittedRsvp (Just invitee) (oneOnly "submitRsvpRequest" rows) name))
 
 findInviteeByCode :: Connection -> Text -> IO (Maybe Invitee)
 findInviteeByCode conn code = do
@@ -161,25 +177,25 @@ lookupSession conn token = do
     (token, now)
   pure (not (null rows))
 
-insertRsvpSession :: Connection -> Text -> Int64 -> IO ()
-insertRsvpSession conn token iid = do
+insertRsvpSession :: Connection -> Text -> Maybe Int64 -> Maybe Text -> IO ()
+insertRsvpSession conn token miid mrid = do
   now <- getCurrentTime
   let expires = addUTCTime (180 * 24 * 3600) now
   void $ execute conn
-    "INSERT INTO rsvp_sessions (token, invitee_id, expires_at) VALUES (?, ?, ?)"
-    (token, iid, expires)
+    "INSERT INTO rsvp_sessions (token, invitee_id, rsvp_id, expires_at) VALUES (?, ?, ?::uuid, ?)"
+    (token, miid, mrid, expires)
 
-lookupRsvpSession :: Connection -> Text -> IO (Maybe Invitee)
+lookupRsvpSession :: Connection -> Text -> IO (Maybe RsvpSession)
 lookupRsvpSession conn token = do
   now <- getCurrentTime
   rows <- query conn
-    ("SELECT i.id, i.name, i.code, i.max_guests, i.notes, i.created_at::text " <>
-     "FROM rsvp_sessions s JOIN invitees i ON i.id = s.invitee_id " <>
+    ("SELECT i.id, i.name, i.code, s.rsvp_id::text, r.name " <>
+     "FROM rsvp_sessions s LEFT JOIN invitees i ON i.id = s.invitee_id LEFT JOIN rsvps r ON r.id = s.rsvp_id " <>
      "WHERE s.token = ? AND s.expires_at > ? LIMIT 1")
     (token, now)
   pure $ case rows of
-    []    -> Nothing
-    (i:_) -> Just i
+    [] -> Nothing
+    ((miid, iname, icode, mrid, rname):_) -> Just (RsvpSession miid iname icode mrid rname)
 
 deleteSession :: Connection -> Text -> IO ()
 deleteSession conn token =
@@ -243,28 +259,37 @@ listRsvps conn = query_ conn
 
 linkRsvpInvitee :: Connection -> Text -> LinkInviteeBody -> IO (Maybe RsvpAdmin)
 linkRsvpInvitee conn rid body = do
-  rows <- query conn
-    ("WITH updated AS (UPDATE rsvps SET invitee_id = ?, updated_at = NOW() WHERE id = ?::uuid RETURNING *) " <>
-     "SELECT r.id::text, r.name, r.status, r.guest_count, r.dietary, r.invitee_id, r.invitation_code_used, i.name, i.code, r.created_at::text " <>
-     "FROM updated r LEFT JOIN invitees i ON i.id = r.invitee_id")
-    (linkInviteeId body, rid)
-  pure $ case rows of
-    []    -> Nothing
-    (r:_) -> Just r
+  withTransaction conn $ do
+    rows <- query conn
+      ("WITH updated AS (UPDATE rsvps SET invitee_id = ?, updated_at = NOW() WHERE id = ?::uuid RETURNING *) " <>
+       "SELECT r.id::text, r.name, r.status, r.guest_count, r.dietary, r.invitee_id, r.invitation_code_used, i.name, i.code, r.created_at::text " <>
+       "FROM updated r LEFT JOIN invitees i ON i.id = r.invitee_id")
+      (linkInviteeId body, rid)
+    case rows of
+      [] -> pure Nothing
+      (r:_) -> do
+        case linkInviteeId body of
+          Nothing ->
+            void $ execute conn "UPDATE videos SET invitee_id = NULL WHERE rsvp_id = ?::uuid" (Only rid)
+          Just iid -> do
+            void $ execute conn "UPDATE videos SET invitee_id = ? WHERE rsvp_id = ?::uuid" (iid, rid)
+            void $ execute conn "UPDATE videos SET rsvp_id = ?::uuid WHERE invitee_id = ? AND rsvp_id IS NULL" (rid, iid)
+        pure (Just r)
 
 deleteRsvp :: Connection -> Text -> IO ()
 deleteRsvp conn rid =
   void $ execute conn "DELETE FROM rsvps WHERE id = ?::uuid" (Only rid)
 
-insertVideo :: Connection -> Int64 -> SavedVideo -> IO Text
-insertVideo conn iid video = do
+insertVideo :: Connection -> RsvpSession -> SavedVideo -> IO Text
+insertVideo conn session video = do
   rows :: [Only Text] <- query conn
-    "INSERT INTO videos (original_filename, stored_filename, content_type, size_bytes, invitee_id, submitter_name, message) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id::text"
+    "INSERT INTO videos (original_filename, stored_filename, content_type, size_bytes, invitee_id, rsvp_id, submitter_name, message) VALUES (?, ?, ?, ?, ?, ?::uuid, ?, ?) RETURNING id::text"
     ( savedOriginalFilename video
     , savedStoredFilename video
     , savedContentType video
     , savedSizeBytes video
-    , iid
+    , sessionInviteeId session
+    , sessionRsvpId session
     , savedSubmitterName video
     , savedMessage video
     )
@@ -274,12 +299,16 @@ insertVideo conn iid video = do
 
 listVideos :: Connection -> IO [VideoAdmin]
 listVideos conn = query_ conn
-  "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, invitee_id, submitter_name, message, created_at::text FROM videos ORDER BY created_at DESC"
+  ("SELECT v.id::text, v.original_filename, v.stored_filename, v.content_type, v.size_bytes, v.invitee_id, v.rsvp_id::text, " <>
+   "i.name, i.code, r.name, v.submitter_name, v.message, v.created_at::text " <>
+   "FROM videos v LEFT JOIN invitees i ON i.id = v.invitee_id LEFT JOIN rsvps r ON r.id = v.rsvp_id ORDER BY v.created_at DESC")
 
 getVideo :: Connection -> Text -> IO (Maybe VideoAdmin)
 getVideo conn vid = do
   rows <- query conn
-    "SELECT id::text, original_filename, stored_filename, content_type, size_bytes, invitee_id, submitter_name, message, created_at::text FROM videos WHERE id = ?::uuid"
+    ("SELECT v.id::text, v.original_filename, v.stored_filename, v.content_type, v.size_bytes, v.invitee_id, v.rsvp_id::text, " <>
+     "i.name, i.code, r.name, v.submitter_name, v.message, v.created_at::text " <>
+     "FROM videos v LEFT JOIN invitees i ON i.id = v.invitee_id LEFT JOIN rsvps r ON r.id = v.rsvp_id WHERE v.id = ?::uuid")
     (Only vid)
   pure $ case rows of
     []    -> Nothing
@@ -300,6 +329,11 @@ oneRow :: String -> [a] -> IO a
 oneRow label rows = case rows of
   []    -> fail (label <> ": no row returned")
   (x:_) -> pure x
+
+oneOnly :: String -> [Only a] -> a
+oneOnly label rows = case rows of
+  []          -> error (label <> ": no row returned")
+  (Only x:_) -> x
 
 nonEmpty :: Text -> Maybe Text
 nonEmpty value =
