@@ -1107,6 +1107,7 @@ siteCSS = T.unlines
   , ".rsvp-counter {"
   , "  display: flex;"
   , "  align-items: center;"
+  , "  justify-content: center;"
   , "  gap: 1.8rem;"
   , "  margin: 1rem 0 1.4rem;"
   , "}"
