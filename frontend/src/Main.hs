@@ -41,7 +41,7 @@ bodyW = do
     pure videoOpenE'
   videoUploadOverlay videoOpenE
   pb <- getPostBuild
-  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> videoUploadShimJS <> ";" <> videoUploadFixJS)) <$ pb
+  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> videoUploadShimJS <> ";" <> videoUploadProgressJS)) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -117,6 +117,10 @@ videoUploadShimJS =
 videoUploadFixJS :: String
 videoUploadFixJS =
   "(function(){function txt(t){return (t||'').replace(/^\\\"|\\\"$/g,'');}function setStatus(m,e){var s=document.getElementById('video-upload-status');if(s){s.textContent=m||'';s.classList.toggle('is-error',!!e);}}function setLoginMessage(m){var b=document.getElementById('video-upload-open');if(!b)return;var p=document.getElementById('video-login-message');if(!p){p=document.createElement('p');p.id='video-login-message';p.className='video-login-message';b.parentNode.insertBefore(p,b.nextSibling);}p.textContent=m||'';}function rsvpStatus(m){setTimeout(function(){var xs=document.querySelectorAll('#rsvp-overlay .rsvp-status');for(var i=0;i<xs.length;i++){if(xs[i].offsetParent!==null){xs[i].textContent=m;xs[i].style.display='';xs[i].classList.add('is-error');}}},25);}function code(){var p=new URLSearchParams(location.search||'');return p.get('code')||'';}function enhanceRsvpErrors(){if(window.__weddingRsvpErrorsEnhanced)return;window.__weddingRsvpErrorsEnhanced=1;var open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__weddingRsvpFixUrl=String(u||'');return open.apply(this,arguments);};var send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__weddingRsvpFixUrl==='/api/rsvp')this.addEventListener('load',function(){if(this.status>=400)rsvpStatus(txt(this.responseText)||'Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});return send.apply(this,arguments);};}function enhanceInviteLogin(){var c=code();if(!c||window.__weddingRsvpLoginMessageTried)return;window.__weddingRsvpLoginMessageTried=1;fetch('/api/rsvp/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).then(function(r){if(!r.ok)setLoginMessage('Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});}function enhanceUpload(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.fixReady)return;f.dataset.fixReady='1';var b=document.getElementById('video-upload-submit');f.addEventListener('submit',function(ev){ev.preventDefault();ev.stopImmediatePropagation();var input=document.getElementById('video-upload-file');var file=input&&input.files&&input.files[0];if(!file){setStatus('Elige un video primero.',true);return;}if(b)b.disabled=true;setStatus('Subiendo...',false);var controller=window.AbortController?new AbortController():null;var timer=setTimeout(function(){if(controller)controller.abort();},120000);fetch('/api/rsvp/me',{credentials:'same-origin',signal:controller&&controller.signal}).then(function(r){if(!r.ok)throw new Error('Confirma tu RSVP con tu codigo de invitacion antes de subir video.');var d=new FormData(f);d.delete('name');return fetch('/api/videos',{method:'POST',body:d,credentials:'same-origin',signal:controller&&controller.signal});}).then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error(txt(t)||'No pudimos subir el video. Intentalo de nuevo.');});return r.json();}).then(function(){f.reset();setStatus('Video recibido. Gracias.',false);}).catch(function(e){setStatus(e&&e.name==='AbortError'?'La subida tardo demasiado. Intentalo con un video mas pequeno.':(e&&e.message)||'No pudimos subir el video. Intentalo de nuevo.',true);}).finally(function(){clearTimeout(timer);if(b)b.disabled=false;});},true);}function start(){enhanceRsvpErrors();enhanceInviteLogin();enhanceUpload();}start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
+
+videoUploadProgressJS :: String
+videoUploadProgressJS =
+  "(function(){function clean(t){return (t||'').replace(/^\\\"|\\\"$/g,'');}function status(m,e){var s=document.getElementById('video-upload-status');if(s){s.textContent=m||'';s.classList.toggle('is-error',!!e);}}function progress(v,show){var wrap=document.getElementById('video-upload-progress');var bar=document.getElementById('video-upload-progress-bar');var txt=document.getElementById('video-upload-progress-text');var n=Math.max(0,Math.min(100,Math.round(v||0)));if(wrap){wrap.hidden=!show;wrap.classList.toggle('is-error',false);}if(bar){bar.style.width=n+'%';bar.setAttribute('aria-valuenow',String(n));}if(txt)txt.textContent=n+'%';}function fail(m){var wrap=document.getElementById('video-upload-progress');if(wrap)wrap.classList.add('is-error');status(m,true);}function loginMessage(m){var b=document.getElementById('video-upload-open');if(!b)return;var p=document.getElementById('video-login-message');if(!p){p=document.createElement('p');p.id='video-login-message';p.className='video-login-message';b.parentNode.insertBefore(p,b.nextSibling);}p.textContent=m||'';}function code(){var p=new URLSearchParams(location.search||'');return p.get('code')||'';}function rsvpStatus(m){setTimeout(function(){var xs=document.querySelectorAll('#rsvp-overlay .rsvp-status');for(var i=0;i<xs.length;i++){if(xs[i].offsetParent!==null){xs[i].textContent=m;xs[i].style.display='';xs[i].classList.add('is-error');}}},25);}function enhanceRsvpErrors(){if(window.__weddingRsvpProgressErrors)return;window.__weddingRsvpProgressErrors=1;var open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__weddingRsvpProgressUrl=String(u||'');return open.apply(this,arguments);};var send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__weddingRsvpProgressUrl==='/api/rsvp')this.addEventListener('load',function(){if(this.status>=400)rsvpStatus(clean(this.responseText)||'Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});return send.apply(this,arguments);};}function enhanceInviteLogin(){var c=code();if(!c||window.__weddingRsvpProgressLogin)return;window.__weddingRsvpProgressLogin=1;fetch('/api/rsvp/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).then(function(r){if(!r.ok)loginMessage('Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});}function uploadWithProgress(form,button){return new Promise(function(resolve,reject){var xhr=new XMLHttpRequest();var timeout=setTimeout(function(){xhr.abort();reject(new Error('La subida tardo demasiado. Intentalo con un video mas pequeno.'));},120000);xhr.open('POST','/api/videos');xhr.withCredentials=true;xhr.upload.onprogress=function(ev){if(ev.lengthComputable){var pct=ev.total?ev.loaded/ev.total*100:0;progress(pct,true);status('Subiendo... '+Math.round(pct)+'%',false);}else{progress(5,true);status('Subiendo...',false);}};xhr.onload=function(){clearTimeout(timeout);if(xhr.status>=200&&xhr.status<300){progress(100,true);resolve();}else{reject(new Error(clean(xhr.responseText)||'No pudimos subir el video. Intentalo de nuevo.'));}};xhr.onerror=function(){clearTimeout(timeout);reject(new Error('No pudimos subir el video. Revisa tu conexion e intentalo de nuevo.'));};xhr.onabort=function(){clearTimeout(timeout);reject(new Error('La subida fue cancelada. Intentalo de nuevo.'));};var data=new FormData(form);data.delete('name');xhr.send(data);});}function enhanceUpload(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.progressReady)return;f.dataset.progressReady='1';f.dataset.fixReady='1';var b=document.getElementById('video-upload-submit');f.addEventListener('submit',function(ev){ev.preventDefault();ev.stopImmediatePropagation();var input=document.getElementById('video-upload-file');var file=input&&input.files&&input.files[0];if(!file){progress(0,false);status('Elige un video primero.',true);return;}if(b)b.disabled=true;progress(0,true);status('Preparando subida...',false);fetch('/api/rsvp/me',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('Confirma tu RSVP con tu codigo de invitacion antes de subir video.');return uploadWithProgress(f,b);}).then(function(){f.reset();progress(100,true);status('Video recibido. Gracias.',false);}).catch(function(e){fail((e&&e.message)||'No pudimos subir el video. Intentalo de nuevo.');}).finally(function(){if(b)b.disabled=false;});},true);}function start(){enhanceRsvpErrors();enhanceInviteLogin();enhanceUpload();}start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
 
 fixedNav :: DomBuilder t m => m ()
 fixedNav =
@@ -494,6 +498,21 @@ videoUploadOverlay openE = mdo
          <> "accept" =: "video/*"
           ) blank
         elAttr "p" ("id" =: "video-upload-status" <> "class" =: "rsvp-status") blank
+        elAttr "div"
+          ( "id" =: "video-upload-progress"
+         <> "class" =: "video-upload-progress"
+         <> "hidden" =: "hidden"
+          ) $ do
+          elAttr "div" ("class" =: "video-upload-progress-track") $
+            elAttr "div"
+              ( "id" =: "video-upload-progress-bar"
+             <> "class" =: "video-upload-progress-bar"
+             <> "role" =: "progressbar"
+             <> "aria-valuemin" =: "0"
+             <> "aria-valuemax" =: "100"
+             <> "aria-valuenow" =: "0"
+              ) blank
+          elAttr "p" ("id" =: "video-upload-progress-text" <> "class" =: "video-upload-progress-text") $ text "0%"
         elAttr "button"
           ( "id" =: "video-upload-submit"
          <> "class" =: "rsvp-btn construction-ok"
@@ -1221,6 +1240,12 @@ siteCSS = T.unlines
   , ".video-upload-form { margin-top: 1.1rem; text-align: left; }"
   , ".video-upload-message { min-height: 6rem; resize: vertical; }"
   , ".video-upload-file { padding: .62rem; }"
+  , ".video-upload-progress { margin: .4rem 0 1rem; }"
+  , ".video-upload-progress[hidden] { display: none; }"
+  , ".video-upload-progress-track { overflow: hidden; height: .55rem; border: 1px solid rgba(255,255,255,.36); border-radius: 999px; background: rgba(255,255,255,.1); }"
+  , ".video-upload-progress-bar { width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(255,255,255,.72), rgba(255,232,195,.96)); box-shadow: 0 0 18px rgba(255,232,195,.28); transition: width .18s ease-out; }"
+  , ".video-upload-progress-text { margin: .45rem 0 0; color: rgba(255,255,255,.82); font-size: .88rem; letter-spacing: .06em; text-align: right; }"
+  , ".video-upload-progress.is-error .video-upload-progress-bar { background: linear-gradient(90deg, rgba(255,180,168,.8), rgba(255,120,105,.95)); }"
   , ".rsvp-status.is-error { color: #ffb4a8; }"
   , ""
 
