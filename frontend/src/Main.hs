@@ -477,21 +477,13 @@ mesaRegalosSection =
     elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
         text "MESA DE REGALOS"
-      elAttr "div" ("class" =: "h-track" <> "data-reveal" =: "") $
-        hCard
-          "LIVERPOOL"
-          "51981423"
-          (Just "https://mesaderegalos.liverpool.com.mx/milistaderegalos/51981423")
-
-hCard :: DomBuilder t m => Text -> Text -> Maybe Text -> m ()
-hCard name number mLink =
-  elAttr "div" ("class" =: "h-card glass rect registry-card") $ do
-    elAttr "p" ("class" =: "mesa-label") $ text name
-    elAttr "p" ("class" =: "registry-number") $ text number
-    case mLink of
-      Nothing  -> blank
-      Just url ->
-        qrBlock url "qr-registry.png" "Ver mesa de regalos"
+      elAttr "div" ("class" =: "glass rect registry-card" <> "data-reveal" =: "") $ do
+        elAttr "p" ("class" =: "mesa-label") $ text "LIVERPOOL"
+        elAttr "p" ("class" =: "registry-number") $ text "51981423"
+        qrBlock
+          "https://mesaderegalos.liverpool.com.mx/milistaderegalos/51981423"
+          "qr-registry.png"
+          "Ver mesa de regalos"
 
 qrBlock :: DomBuilder t m => Text -> Text -> Text -> m ()
 qrBlock url image label =
@@ -898,13 +890,13 @@ siteCSS = T.unlines
   , ".hero-spacer { flex: 1; }"
   , ".hero-copy {"
   , "  text-align: center;"
-  , "  padding: 0 1.2rem 5rem;"
+  , "  padding: 0 1.2rem clamp(5rem, 8vw, 8rem);"
   , "  position: relative;"
   , "  z-index: 1;"
   , "}"
   , ".hero-date {"
   , "  letter-spacing: .2em;"
-  , "  font-size: clamp(.7rem, 2.1vw, 1rem);"
+  , "  font-size: clamp(.7rem, 2.1vw, 1.3rem);"
   , "  color: rgba(255,255,255,.9);"
   , "  white-space: nowrap;"
   , "  margin-bottom: .45rem;"
@@ -1260,23 +1252,8 @@ siteCSS = T.unlines
   , "}"
   , ""
 
-  -- ── Mesa de Regalos — horizontal track ────────────────────────────────────
-  , ".h-track {"
-  , "  display: flex;"
-  , "  flex-direction: row;"
-  , "  flex-wrap: wrap;"
-  , "  gap: 0;"
-  , "  padding: 0;"
-  , "  width: 100%;"
-  , "  max-width: var(--photo-frame-width);"
-  , "  margin: 0 auto;"
-  , "  justify-content: center;"
-  , "  align-items: center;"
-  , "  position: relative;"
-  , "  z-index: 1;"
-  , "}"
-  , ".h-card { flex-shrink: 1; margin: 1.1rem auto; }"
-  , ".registry-card { line-height: 1.7; text-align: center; transform: translateY(var(--card-lift)); }"
+  -- ── Mesa de Regalos ───────────────────────────────────────────────────────
+  , ".registry-card { line-height: 1.7; text-align: center; margin: 1.1rem auto; transform: translateY(var(--card-lift)); }"
   , ".mesa-label {"
   , "  font-size: .72rem;"
   , "  letter-spacing: .27em;"
@@ -1297,14 +1274,6 @@ siteCSS = T.unlines
   , "}"
   , ".qr-block { display: grid; justify-items: center; gap: .8rem; }"
   , ".qr-img { width: min(132px, 42vw); height: auto; padding: .45rem; border-radius: 12px; background: rgba(255,255,255,.92); box-shadow: 0 10px 32px rgba(0,0,0,.28); }"
-  , "@media (max-width: 640px) {"
-  , "  .h-track {"
-  , "    flex-direction: column;"
-  , "    width: 100%;"
-  , "    padding: 0;"
-  , "  }"
-  , "  .h-card { min-width: auto; }"
-  , "}"
   , ""
 
   -- ── Video mensaje ─────────────────────────────────────────────────────────
