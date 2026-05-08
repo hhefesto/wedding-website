@@ -10,6 +10,7 @@ module Wedding.Types
   , RsvpAdmin (..)
   , VideoAdmin (..)
   , LinkInviteeBody (..)
+  , ResolveDuplicateBody (..)
   , VideoSubmittedResponse (..)
   ) where
 
@@ -179,6 +180,12 @@ data RsvpAdmin = RsvpAdmin
   , raInvitationCodeUsed :: Maybe Text
   , raInviteeName        :: Maybe Text
   , raInviteeCode        :: Maybe Text
+  , raIpAddress          :: Maybe Text
+  , raResolutionStatus   :: Text
+  , raSuggestedInviteeId :: Maybe Int64
+  , raSuggestedName      :: Maybe Text
+  , raSuggestedCode      :: Maybe Text
+  , raSuggestedRsvpId    :: Maybe Text
   , raCreatedAt          :: Text
   } deriving (Eq, Show, Generic)
 
@@ -193,6 +200,12 @@ instance ToJSON RsvpAdmin where
     , "invitationCodeUsed" .= raInvitationCodeUsed r
     , "inviteeName"        .= raInviteeName r
     , "inviteeCode"        .= raInviteeCode r
+    , "ipAddress"          .= raIpAddress r
+    , "resolutionStatus"   .= raResolutionStatus r
+    , "suggestedInviteeId" .= raSuggestedInviteeId r
+    , "suggestedName"      .= raSuggestedName r
+    , "suggestedCode"      .= raSuggestedCode r
+    , "suggestedRsvpId"    .= raSuggestedRsvpId r
     , "createdAt"          .= raCreatedAt r
     ]
 
@@ -208,6 +221,12 @@ instance FromJSON RsvpAdmin where
       <*> o .:? "invitationCodeUsed"
       <*> o .:? "inviteeName"
       <*> o .:? "inviteeCode"
+      <*> o .:? "ipAddress"
+      <*> o .:  "resolutionStatus"
+      <*> o .:? "suggestedInviteeId"
+      <*> o .:? "suggestedName"
+      <*> o .:? "suggestedCode"
+      <*> o .:? "suggestedRsvpId"
       <*> o .:  "createdAt"
 
 newtype LinkInviteeBody = LinkInviteeBody
@@ -219,6 +238,16 @@ instance FromJSON LinkInviteeBody where
 
 instance ToJSON LinkInviteeBody where
   toJSON body = object ["inviteeId" .= linkInviteeId body]
+
+newtype ResolveDuplicateBody = ResolveDuplicateBody
+  { resolveKeep :: Text
+  } deriving (Eq, Show, Generic)
+
+instance FromJSON ResolveDuplicateBody where
+  parseJSON = withObject "ResolveDuplicateBody" $ \o -> ResolveDuplicateBody <$> o .: "keep"
+
+instance ToJSON ResolveDuplicateBody where
+  toJSON body = object ["keep" .= resolveKeep body]
 
 data VideoAdmin = VideoAdmin
   { vaId               :: Text
@@ -233,6 +262,8 @@ data VideoAdmin = VideoAdmin
   , vaRsvpName         :: Maybe Text
   , vaSubmitterName    :: Maybe Text
   , vaMessage          :: Maybe Text
+  , vaIpAddress        :: Maybe Text
+  , vaResolutionStatus :: Text
   , vaCreatedAt        :: Text
   } deriving (Eq, Show, Generic)
 
@@ -250,6 +281,8 @@ instance ToJSON VideoAdmin where
     , "rsvpName"         .= vaRsvpName v
     , "submitterName"    .= vaSubmitterName v
     , "message"          .= vaMessage v
+    , "ipAddress"        .= vaIpAddress v
+    , "resolutionStatus" .= vaResolutionStatus v
     , "createdAt"        .= vaCreatedAt v
     ]
 
@@ -268,6 +301,8 @@ instance FromJSON VideoAdmin where
       <*> o .:? "rsvpName"
       <*> o .:? "submitterName"
       <*> o .:? "message"
+      <*> o .:? "ipAddress"
+      <*> o .:  "resolutionStatus"
       <*> o .:  "createdAt"
 
 newtype VideoSubmittedResponse = VideoSubmittedResponse

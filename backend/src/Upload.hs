@@ -26,6 +26,7 @@ data SavedVideo = SavedVideo
   , savedSizeBytes        :: Int64
   , savedSubmitterName    :: Maybe Text
   , savedMessage          :: Maybe Text
+  , savedInvitationCode   :: Maybe Text
   } deriving (Eq, Show)
 
 saveVideoUpload :: FilePath -> Integer -> MultipartData Tmp -> IO (Either Text SavedVideo)
@@ -55,6 +56,7 @@ saveVideoUpload dir maxBytes multipart =
                 , savedSizeBytes        = fromIntegral size
                 , savedSubmitterName    = nonEmpty =<< inputValue "name" multipart
                 , savedMessage          = nonEmpty =<< inputValue "message" multipart
+                , savedInvitationCode   = nonEmpty =<< inputValue "invitationCode" multipart
                 }
 
 inputValue :: Text -> MultipartData Tmp -> Maybe Text

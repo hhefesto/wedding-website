@@ -15,9 +15,10 @@ import           Language.Javascript.JSaddle (MonadJSM, eval, liftJSM)
 import           Reflex.Dom
 import           Text.Read                (readMaybe)
 import           Wedding.Types            (AttendanceStatus (..), Invitee (..),
-                                           InviteeInput (..), LinkInviteeBody (..),
-                                           LoginRequest (..), RsvpAdmin (..),
-                                           VideoAdmin (..))
+                                            InviteeInput (..), LinkInviteeBody (..),
+                                            LoginRequest (..), RsvpAdmin (..),
+                                            ResolveDuplicateBody (..),
+                                            VideoAdmin (..))
 
 main :: IO ()
 main = mainWidgetWithHead headW adminRoot
@@ -30,8 +31,8 @@ headW = do
 data AdminTab = TabInvitees | TabRsvps | TabVideos
   deriving (Eq)
 
-data RsvpAdminAction = LinkRsvp Text (Maybe Int64) | DeleteRsvp Text
-data VideoAdminAction = DeleteVideo Text
+data RsvpAdminAction = LinkRsvp Text (Maybe Int64) | DeleteRsvp Text | ResolveDuplicate Text Text
+data VideoAdminAction = LinkVideo Text (Maybe Int64) | DeleteVideo Text
 
 adminRoot :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 adminRoot = mdo
@@ -89,7 +90,7 @@ adminDashboard loggedInE = elAttr "main" ("class" =: "admin-page") $ mdo
     panelDyn <- dyn $ ffor tabDyn $ \tab -> case tab of
       TabInvitees -> adminInviteesPanel inviteesDyn
       TabRsvps    -> adminRsvpsPanel inviteesDyn rsvpsDyn
-      TabVideos   -> adminVideosPanel videosDyn
+      TabVideos   -> adminVideosPanel inviteesDyn videosDyn
     switchHold never panelDyn
   logoutRespE <- performRequestAsync (xhrPostNoBody "/api/admin/logout" <$ logoutClickE)
   pure (xhrOk logoutRespE)
@@ -166,6 +167,7 @@ adminRsvpsPanel inviteesDyn rsvpsDyn = elAttr "div" ("class" =: "admin-card") $ 
       reqE = ffor actionE $ \action -> case action of
         LinkRsvp rid miid -> adminJsonRequest "PUT" ("/api/admin/rsvps/" <> rid <> "/invitee") (LinkInviteeBody miid)
         DeleteRsvp rid    -> xhrDelete ("/api/admin/rsvps/" <> rid)
+        ResolveDuplicate rid keep -> adminJsonRequest "POST" ("/api/admin/rsvps/" <> rid <> "/resolve-duplicate") (ResolveDuplicateBody keep)
   respE <- performRequestAsync reqE
   pure (xhrOk respE)
 
@@ -175,6 +177,7 @@ adminRsvpRow inviteesDyn rsvpsDyn rsvpDyn = elAttr "article" ("class" =: "admin-
     el "strong" $ dynText (raName <$> rsvpDyn)
     el "p" $ dynText (rsvpMeta <$> rsvpDyn)
     el "p" $ dynText (rsvpInviteeMeta <$> rsvpDyn)
+    el "p" $ dynText (rsvpResolutionMeta <$> rsvpDyn)
     el "p" $ dynText (maybe "" id . raDietary <$> rsvpDyn)
   elAttr "div" ("class" =: "admin-row-actions") $ do
     pb <- getPostBuild
@@ -184,36 +187,56 @@ adminRsvpRow inviteesDyn rsvpsDyn rsvpDyn = elAttr "article" ("class" =: "admin-
       & dropdownConfig_setValue .~ leftmost [current selectedInviteeD `tag` pb, updated selectedInviteeD]
     (linkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Ligar"
     (unlinkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $ text "Sin invitacion"
+    (keepExistingBtn, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $ text "Mantener RSVP existente"
+    (keepNewBtn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Mantener este RSVP"
     (deleteBtn, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar RSVP"
     let ridD = raId <$> rsvpDyn
         parsedIdD = parseMaybeInt64 <$> _dropdown_value selectedDyn
     pure $ leftmost
       [ attachWith LinkRsvp (current ridD) (current parsedIdD `tag` domEvent Click linkBtn)
       , attachWith (\rid _ -> LinkRsvp rid Nothing) (current ridD) (domEvent Click unlinkBtn)
+      , attachWith (\rid _ -> ResolveDuplicate rid "existing") (current ridD) (domEvent Click keepExistingBtn)
+      , attachWith (\rid _ -> ResolveDuplicate rid "new") (current ridD) (domEvent Click keepNewBtn)
       , DeleteRsvp <$> (current ridD `tag` domEvent Click deleteBtn)
       ]
 
-adminVideosPanel :: MonadWidget t m => Dynamic t [VideoAdmin] -> m (Event t ())
-adminVideosPanel videosDyn = elAttr "div" ("class" =: "admin-card") $ do
+adminVideosPanel :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t [VideoAdmin] -> m (Event t ())
+adminVideosPanel inviteesDyn videosDyn = elAttr "div" ("class" =: "admin-card") $ do
   el "h2" $ do
     text "Videos ("
     dynText (T.pack . show . length <$> videosDyn)
     text ")"
-  deleteDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList videosDyn adminVideoRow
-  let deleteE = switchDyn (leftmost <$> deleteDyn)
-  respE <- performRequestAsync (xhrDelete . ("/api/admin/videos/" <>) <$> deleteE)
+  actionDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList videosDyn (adminVideoRow inviteesDyn)
+  let actionE = switchDyn (leftmost <$> actionDyn)
+      reqE = ffor actionE $ \action -> case action of
+        LinkVideo vid miid -> adminJsonRequest "PUT" ("/api/admin/videos/" <> vid <> "/invitee") (LinkInviteeBody miid)
+        DeleteVideo vid    -> xhrDelete ("/api/admin/videos/" <> vid)
+  respE <- performRequestAsync reqE
   pure (xhrOk respE)
 
-adminVideoRow :: MonadWidget t m => Dynamic t VideoAdmin -> m (Event t Text)
-adminVideoRow videoDyn = elAttr "article" ("class" =: "admin-row") $ do
+adminVideoRow :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t VideoAdmin -> m (Event t VideoAdminAction)
+adminVideoRow inviteesDyn videoDyn = elAttr "article" ("class" =: "admin-row") $ do
   el "div" $ do
     el "strong" $ dynText (vaOriginalFilename <$> videoDyn)
     el "p" $ dynText (videoMeta <$> videoDyn)
     el "p" $ dynText (videoSubmitterMeta <$> videoDyn)
   elAttr "div" ("class" =: "admin-row-actions") $ do
+    pb <- getPostBuild
+    let selectedInviteeD = maybe "" (T.pack . show) . vaInviteeId <$> videoDyn
+    selectedDyn <- dropdown "" (simpleInviteeDropdownOptions <$> inviteesDyn) $ def
+      & dropdownConfig_attributes .~ constDyn ("class" =: "admin-input")
+      & dropdownConfig_setValue .~ leftmost [current selectedInviteeD `tag` pb, updated selectedInviteeD]
     elDynAttr "a" (videoDownloadAttrs <$> videoDyn) $ text "Descargar"
+    (linkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Ligar"
+    (unlinkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $ text "Sin invitacion"
     (deleteBtn, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
-    pure (current (vaId <$> videoDyn) `tag` domEvent Click deleteBtn)
+    let vidD = vaId <$> videoDyn
+        parsedIdD = parseMaybeInt64 <$> _dropdown_value selectedDyn
+    pure $ leftmost
+      [ attachWith LinkVideo (current vidD) (current parsedIdD `tag` domEvent Click linkBtn)
+      , attachWith (\vid _ -> LinkVideo vid Nothing) (current vidD) (domEvent Click unlinkBtn)
+      , DeleteVideo <$> (current vidD `tag` domEvent Click deleteBtn)
+      ]
 
 adminInput :: MonadWidget t m => Text -> Text -> Text -> m (InputElement EventResult (DomBuilderSpace m) t)
 adminInput inputType placeholder value = inputElement $ def
@@ -306,6 +329,15 @@ rsvpInviteeMeta r =
     Nothing -> "Sin invitacion asociada"
     Just iid -> "Invitacion: " <> maybe ("ID " <> T.pack (show iid)) id (raInviteeName r) <> " - Codigo: " <> maybe "none" id (raInviteeCode r)
 
+rsvpResolutionMeta :: RsvpAdmin -> Text
+rsvpResolutionMeta r = T.intercalate " | " (filter (not . T.null)
+  [ "IP: " <> maybe "sin IP" id (raIpAddress r)
+  , "Estado: " <> raResolutionStatus r
+  , if raResolutionStatus r == "review"
+      then "Revisar contra: " <> maybe "sin sugerencia" id (raSuggestedName r) <> maybe "" (" / RSVP " <>) (raSuggestedRsvpId r)
+      else ""
+  ])
+
 inviteeDropdownOptions :: [Invitee] -> [RsvpAdmin] -> RsvpAdmin -> Map Text Text
 inviteeDropdownOptions invitees rsvps rsvp = Map.fromList $
   ("", "Selecciona invitacion libre") : map optionFor (filter available invitees)
@@ -313,6 +345,12 @@ inviteeDropdownOptions invitees rsvps rsvp = Map.fromList $
     currentId = raInviteeId rsvp
     available invitee = Just (inviteeId invitee) == currentId || inviteeId invitee `notElem` assignedIds
     assignedIds = [iid | other <- rsvps, Just iid <- [raInviteeId other], Just iid /= currentId]
+    optionFor invitee = (T.pack (show (inviteeId invitee)), inviteeName invitee <> " - " <> maybe "sin codigo" id (inviteeCode invitee))
+
+simpleInviteeDropdownOptions :: [Invitee] -> Map Text Text
+simpleInviteeDropdownOptions invitees = Map.fromList $
+  ("", "Selecciona invitacion") : map optionFor invitees
+  where
     optionFor invitee = (T.pack (show (inviteeId invitee)), inviteeName invitee <> " - " <> maybe "sin codigo" id (inviteeCode invitee))
 
 totalGuests :: [RsvpAdmin] -> Int
@@ -326,6 +364,8 @@ videoSubmitterMeta v = T.intercalate " | " (filter (not . T.null)
   [ "Subido por: " <> maybe "anonimo" id (vaSubmitterName v)
   , "RSVP: " <> maybe "sin RSVP" id (vaRsvpName v)
   , "Invitacion: " <> maybe "sin invitacion" id (vaInviteeName v)
+  , "IP: " <> maybe "sin IP" id (vaIpAddress v)
+  , "Estado: " <> vaResolutionStatus v
   , maybe "" ("Mensaje: " <>) (vaMessage v)
   ])
 

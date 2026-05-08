@@ -35,8 +35,9 @@ import qualified Db
 import           Upload                     (SavedVideo (..), saveVideoUpload)
 import           Wedding.Types              (InviteLookup, Invitee (..), InviteeInput (..),
                                              LinkInviteeBody, LoginRequest (..),
-                                             RsvpLoginRequest (..),
-                                             RsvpAdmin, RsvpRequest (..),
+                                              RsvpLoginRequest (..),
+                                             ResolveDuplicateBody (..),
+                                              RsvpAdmin, RsvpRequest (..),
                                              VideoAdmin (..),
                                              VideoSubmittedResponse (..))
 
@@ -51,16 +52,18 @@ data AppConfig = AppConfig
 
 type ConnVar = MVar Connection
 type CookieHeader = Header "Cookie" Text
+type ForwardedForHeader = Header "X-Forwarded-For" Text
+type RealIpHeader = Header "X-Real-IP" Text
 type SetCookie a = Headers '[Header "Set-Cookie" Text] a
 type DownloadFile = Headers '[Header "Content-Disposition" Text] BL.ByteString
 
 type API =
        "api" :> "health" :> Get '[PlainText] String
   :<|> "api" :> "invite" :> QueryParam "code" Text :> Get '[JSON] InviteLookup
-  :<|> "api" :> "rsvp"   :> ReqBody '[JSON] RsvpRequest :> Post '[JSON] (SetCookie NoContent)
+  :<|> "api" :> "rsvp"   :> ForwardedForHeader :> RealIpHeader :> ReqBody '[JSON] RsvpRequest :> Post '[JSON] (SetCookie NoContent)
   :<|> "api" :> "rsvp" :> "login" :> ReqBody '[JSON] RsvpLoginRequest :> Post '[JSON] (SetCookie NoContent)
   :<|> "api" :> "rsvp" :> "me" :> CookieHeader :> Get '[JSON] NoContent
-  :<|> "api" :> "videos" :> CookieHeader :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] VideoSubmittedResponse
+  :<|> "api" :> "videos" :> CookieHeader :> ForwardedForHeader :> RealIpHeader :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] VideoSubmittedResponse
   :<|> "api" :> "admin" :> "login" :> ReqBody '[JSON] LoginRequest :> Post '[JSON] (SetCookie NoContent)
   :<|> "api" :> "admin" :> "logout" :> CookieHeader :> Post '[JSON] (SetCookie NoContent)
   :<|> "api" :> "admin" :> "me" :> CookieHeader :> Get '[JSON] NoContent
@@ -71,8 +74,10 @@ type API =
   :<|> "api" :> "admin" :> "invitees" :> Capture "id" Int64 :> "qr" :> CookieHeader :> Get '[OctetStream] DownloadFile
   :<|> "api" :> "admin" :> "rsvps" :> CookieHeader :> Get '[JSON] [RsvpAdmin]
   :<|> "api" :> "admin" :> "rsvps" :> Capture "id" Text :> "invitee" :> CookieHeader :> ReqBody '[JSON] LinkInviteeBody :> Put '[JSON] RsvpAdmin
+  :<|> "api" :> "admin" :> "rsvps" :> Capture "id" Text :> "resolve-duplicate" :> CookieHeader :> ReqBody '[JSON] ResolveDuplicateBody :> Post '[JSON] NoContent
   :<|> "api" :> "admin" :> "rsvps" :> Capture "id" Text :> CookieHeader :> Delete '[JSON] NoContent
   :<|> "api" :> "admin" :> "videos" :> CookieHeader :> Get '[JSON] [VideoAdmin]
+  :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> "invitee" :> CookieHeader :> ReqBody '[JSON] LinkInviteeBody :> Put '[JSON] VideoAdmin
   :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> "download" :> CookieHeader :> Get '[OctetStream] DownloadFile
   :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> CookieHeader :> Delete '[JSON] NoContent
 
@@ -97,8 +102,10 @@ server cfg var =
   :<|> inviteeQrH cfg var
   :<|> listRsvpsH var
   :<|> linkRsvpInviteeH var
+  :<|> resolveDuplicateRsvpH var
   :<|> deleteRsvpH var
   :<|> listVideosH var
+  :<|> linkVideoInviteeH var
   :<|> downloadVideoH cfg var
   :<|> deleteVideoH cfg var
 
@@ -111,9 +118,10 @@ inviteH var mCode = do
   mInvite <- withDb var (`Db.lookupInvite` code)
   maybe (throwError err404 { errBody = "\"Invitation not found\"" }) pure mInvite
 
-rsvpH :: ConnVar -> RsvpRequest -> Handler (SetCookie NoContent)
-rsvpH var r = do
-  result <- withDb var (`Db.submitRsvpRequest` r)
+rsvpH :: ConnVar -> Maybe Text -> Maybe Text -> RsvpRequest -> Handler (SetCookie NoContent)
+rsvpH var forwarded realIp r = do
+  let mIp = requestIp forwarded realIp
+  result <- withDb var (\conn -> Db.submitRsvpRequest conn r mIp)
   case result of
     Left msg -> throwError err400 { errBody = textBody msg }
     Right submitted -> do
@@ -135,15 +143,14 @@ rsvpMeH var mCookie = do
   _ <- requireRsvp var mCookie
   pure NoContent
 
-videoH :: AppConfig -> ConnVar -> Maybe Text -> MultipartData Tmp -> Handler VideoSubmittedResponse
-videoH cfg var mCookie multipart = do
-  session <- requireRsvp var mCookie
+videoH :: AppConfig -> ConnVar -> Maybe Text -> Maybe Text -> Maybe Text -> MultipartData Tmp -> Handler VideoSubmittedResponse
+videoH cfg var mCookie forwarded realIp multipart = do
+  session <- optionalRsvp var mCookie
   saved <- liftIO $ saveVideoUpload (appVideoDir cfg) (appVideoMaxBytes cfg) multipart
   case saved of
     Left msg -> throwError err400 { errBody = textBody msg }
     Right video -> do
-      let attributedVideo = video { savedSubmitterName = sessionDisplayName session }
-      vid <- withDb var (\conn -> Db.insertVideo conn session attributedVideo)
+      vid <- withDb var (\conn -> Db.insertVideo conn session (requestIp forwarded realIp) video)
       pure (VideoSubmittedResponse vid)
 
 loginH :: AppConfig -> ConnVar -> LoginRequest -> Handler (SetCookie NoContent)
@@ -210,6 +217,12 @@ linkRsvpInviteeH var rid mCookie body = do
   mRsvp <- withDb var (\conn -> Db.linkRsvpInvitee conn rid body)
   maybe (throwError err404) pure mRsvp
 
+resolveDuplicateRsvpH :: ConnVar -> Text -> Maybe Text -> ResolveDuplicateBody -> Handler NoContent
+resolveDuplicateRsvpH var rid mCookie body = do
+  requireAdmin var mCookie
+  ok <- withDb var (\conn -> Db.resolveDuplicateRsvp conn rid (resolveKeep body))
+  if ok then pure NoContent else throwError err404
+
 deleteRsvpH :: ConnVar -> Text -> Maybe Text -> Handler NoContent
 deleteRsvpH var rid mCookie = do
   requireAdmin var mCookie
@@ -220,6 +233,12 @@ listVideosH :: ConnVar -> Maybe Text -> Handler [VideoAdmin]
 listVideosH var mCookie = do
   requireAdmin var mCookie
   withDb var Db.listVideos
+
+linkVideoInviteeH :: ConnVar -> Text -> Maybe Text -> LinkInviteeBody -> Handler VideoAdmin
+linkVideoInviteeH var vid mCookie body = do
+  requireAdmin var mCookie
+  mVideo <- withDb var (\conn -> Db.linkVideoInvitee conn vid body)
+  maybe (throwError err404) pure mVideo
 
 downloadVideoH :: AppConfig -> ConnVar -> Text -> Maybe Text -> Handler DownloadFile
 downloadVideoH cfg var vid mCookie = do
@@ -270,8 +289,19 @@ requireRsvp var mCookie =
       mInvitee <- withDb var (`Db.lookupRsvpSession` token)
       maybe (throwError err401) pure mInvitee
 
+optionalRsvp :: ConnVar -> Maybe Text -> Handler (Maybe Db.RsvpSession)
+optionalRsvp var mCookie =
+  case extractCookie rsvpCookieName mCookie of
+    Nothing -> pure Nothing
+    Just token -> withDb var (`Db.lookupRsvpSession` token)
+
 sessionDisplayName :: Db.RsvpSession -> Maybe Text
 sessionDisplayName session = Db.sessionInviteeName session <|> Db.sessionRsvpName session
+
+requestIp :: Maybe Text -> Maybe Text -> Maybe Text
+requestIp forwarded realIp = nonEmpty =<< (firstForwarded <$> forwarded <|> realIp)
+  where
+    firstForwarded = T.takeWhile (/= ',')
 
 extractCookie :: Text -> Maybe Text -> Maybe Text
 extractCookie name mCookie = do
