@@ -15,6 +15,7 @@ import           Language.Javascript.JSaddle (MonadJSM, eval, liftJSM)
 import           Reflex.Dom
 import           Text.Read                (readMaybe)
 import           Wedding.Types            (AttendanceStatus (..), Invitee (..),
+                                            IpAssociationAdmin (..), IpAssociationInput (..),
                                             InviteeInput (..), LinkInviteeBody (..),
                                             LoginRequest (..), RsvpAdmin (..),
                                             ResolveDuplicateBody (..),
@@ -28,11 +29,12 @@ headW = do
   el "title" $ text "Wedding dashboard"
   el "style" $ text adminCSS
 
-data AdminTab = TabInvitees | TabRsvps | TabVideos
+data AdminTab = TabInvitees | TabRsvps | TabVideos | TabIps
   deriving (Eq)
 
 data RsvpAdminAction = LinkRsvp Text (Maybe Int64) | DeleteRsvp Text | ResolveDuplicate Text Text
 data VideoAdminAction = LinkVideo Text (Maybe Int64) | DeleteVideo Text
+data IpAdminAction = CreateIp IpAssociationInput | UpdateIp Int64 IpAssociationInput | DeleteIp Int64
 
 adminRoot :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 adminRoot = mdo
@@ -83,14 +85,17 @@ adminDashboard loggedInE = elAttr "main" ("class" =: "admin-page") $ mdo
   inviteesRespE <- performRequestAsync (xhrGet "/api/admin/invitees" <$ loadE)
   rsvpsRespE <- performRequestAsync (xhrGet "/api/admin/rsvps" <$ loadE)
   videosRespE <- performRequestAsync (xhrGet "/api/admin/videos" <$ loadE)
+  ipsRespE <- performRequestAsync (xhrGet "/api/admin/ip-associations" <$ loadE)
   inviteesDyn <- holdDyn [] (decodeXhrList <$> inviteesRespE)
   rsvpsDyn <- holdDyn [] (decodeXhrList <$> rsvpsRespE)
   videosDyn <- holdDyn [] (decodeXhrList <$> videosRespE)
+  ipsDyn <- holdDyn [] (decodeXhrList <$> ipsRespE)
   refreshE <- elAttr "section" ("class" =: "admin-panel") $ do
     panelDyn <- dyn $ ffor tabDyn $ \tab -> case tab of
       TabInvitees -> adminInviteesPanel inviteesDyn
       TabRsvps    -> adminRsvpsPanel inviteesDyn rsvpsDyn
       TabVideos   -> adminVideosPanel inviteesDyn videosDyn
+      TabIps      -> adminIpsPanel inviteesDyn ipsDyn
     switchHold never panelDyn
   logoutRespE <- performRequestAsync (xhrPostNoBody "/api/admin/logout" <$ logoutClickE)
   pure (xhrOk logoutRespE)
@@ -100,10 +105,12 @@ adminTabs = elAttr "nav" ("class" =: "admin-tabs") $ mdo
   (inviteBtn, _) <- elDynAttr' "button" (tabAttrs TabInvitees <$> tabDyn) $ text "Invitados"
   (rsvpBtn, _) <- elDynAttr' "button" (tabAttrs TabRsvps <$> tabDyn) $ text "RSVPs"
   (videoBtn, _) <- elDynAttr' "button" (tabAttrs TabVideos <$> tabDyn) $ text "Videos"
+  (ipBtn, _) <- elDynAttr' "button" (tabAttrs TabIps <$> tabDyn) $ text "IPs"
   tabDyn <- holdDyn TabInvitees $ leftmost
     [ TabInvitees <$ domEvent Click inviteBtn
     , TabRsvps    <$ domEvent Click rsvpBtn
     , TabVideos   <$ domEvent Click videoBtn
+    , TabIps      <$ domEvent Click ipBtn
     ]
   pure tabDyn
 
@@ -238,6 +245,65 @@ adminVideoRow inviteesDyn videoDyn = elAttr "article" ("class" =: "admin-row") $
       , DeleteVideo <$> (current vidD `tag` domEvent Click deleteBtn)
       ]
 
+adminIpsPanel :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t [IpAssociationAdmin] -> m (Event t ())
+adminIpsPanel inviteesDyn ipsDyn = elAttr "div" ("class" =: "admin-card") $ do
+  el "h2" $ do
+    text "IPs ("
+    dynText (T.pack . show . length <$> ipsDyn)
+    text ")"
+  elAttr "p" ("class" =: "admin-muted") $ text "Relaciona direcciones IP conocidas con invitaciones para resolver RSVP y videos sin codigo."
+  createE <- adminIpCreateForm inviteesDyn
+  actionDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList ipsDyn (adminIpRow inviteesDyn)
+  let actionE = leftmost [createE, switchDyn (leftmost <$> actionDyn)]
+      reqE = ffor actionE $ \action -> case action of
+        CreateIp input -> adminJsonRequest "POST" "/api/admin/ip-associations" input
+        UpdateIp aid input -> adminJsonRequest "PUT" ("/api/admin/ip-associations/" <> T.pack (show aid)) input
+        DeleteIp aid -> xhrDelete ("/api/admin/ip-associations/" <> T.pack (show aid))
+  respE <- performRequestAsync reqE
+  pure (xhrOk respE)
+
+adminIpCreateForm :: MonadWidget t m => Dynamic t [Invitee] -> m (Event t IpAdminAction)
+adminIpCreateForm inviteesDyn = elAttr "div" ("class" =: "admin-inline-form") $ do
+  selectedDyn <- dropdown "" (simpleInviteeDropdownOptions <$> inviteesDyn) $ def
+    & dropdownConfig_attributes .~ constDyn ("class" =: "admin-input")
+  ipEl <- adminInput "text" "IP (ej. 203.0.113.10)" ""
+  sourceEl <- adminInput "text" "Fuente" "admin"
+  (btn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Agregar IP"
+  let inputDyn = IpAssociationInput
+        <$> (maybe 0 id . parseMaybeInt64 <$> _dropdown_value selectedDyn)
+        <*> (T.strip <$> _inputElement_value ipEl)
+        <*> (T.strip <$> _inputElement_value sourceEl)
+  pure (CreateIp <$> current inputDyn `tag` domEvent Click btn)
+
+adminIpRow :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t IpAssociationAdmin -> m (Event t IpAdminAction)
+adminIpRow inviteesDyn ipDyn = elAttr "article" ("class" =: "admin-row") $ do
+  el "div" $ do
+    el "strong" $ dynText (ipaIpAddress <$> ipDyn)
+    el "p" $ dynText (ipAssociationMeta <$> ipDyn)
+  elAttr "div" ("class" =: "admin-row-actions") $ do
+    pb <- getPostBuild
+    let selectedInviteeD = T.pack . show . ipaInviteeId <$> ipDyn
+    selectedDyn <- dropdown "" (simpleInviteeDropdownOptions <$> inviteesDyn) $ def
+      & dropdownConfig_attributes .~ constDyn ("class" =: "admin-input")
+      & dropdownConfig_setValue .~ leftmost [current selectedInviteeD `tag` pb, updated selectedInviteeD]
+    ipEl <- inputElement $ def
+      & inputElementConfig_setValue .~ leftmost [current (ipaIpAddress <$> ipDyn) `tag` pb, updated (ipaIpAddress <$> ipDyn)]
+      & inputElementConfig_elementConfig . elementConfig_initialAttributes .~ ("class" =: "admin-input" <> "type" =: "text")
+    sourceEl <- inputElement $ def
+      & inputElementConfig_setValue .~ leftmost [current (ipaSource <$> ipDyn) `tag` pb, updated (ipaSource <$> ipDyn)]
+      & inputElementConfig_elementConfig . elementConfig_initialAttributes .~ ("class" =: "admin-input" <> "type" =: "text")
+    (saveBtn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Guardar"
+    (deleteBtn, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
+    let aidD = ipaId <$> ipDyn
+        inputDyn = IpAssociationInput
+          <$> (maybe 0 id . parseMaybeInt64 <$> _dropdown_value selectedDyn)
+          <*> (T.strip <$> _inputElement_value ipEl)
+          <*> (T.strip <$> _inputElement_value sourceEl)
+    pure $ leftmost
+      [ attachWith UpdateIp (current aidD) (current inputDyn `tag` domEvent Click saveBtn)
+      , DeleteIp <$> (current aidD `tag` domEvent Click deleteBtn)
+      ]
+
 adminInput :: MonadWidget t m => Text -> Text -> Text -> m (InputElement EventResult (DomBuilderSpace m) t)
 adminInput inputType placeholder value = inputElement $ def
   & inputElementConfig_initialValue .~ value
@@ -369,6 +435,14 @@ videoSubmitterMeta v = T.intercalate " | " (filter (not . T.null)
   , maybe "" ("Mensaje: " <>) (vaMessage v)
   ])
 
+ipAssociationMeta :: IpAssociationAdmin -> Text
+ipAssociationMeta a = T.intercalate " | "
+  [ "Invitacion: " <> ipaInviteeName a <> " - Codigo: " <> maybe "none" id (ipaInviteeCode a)
+  , "Fuente: " <> ipaSource a
+  , "Primera vez: " <> ipaFirstSeenAt a
+  , "Ultima vez: " <> ipaLastSeenAt a
+  ]
+
 videoDownloadAttrs :: VideoAdmin -> Map Text Text
 videoDownloadAttrs v =
   "class" =: "admin-btn small" <> "href" =: ("/api/admin/videos/" <> vaId v <> "/download")
@@ -420,11 +494,12 @@ adminCSS = T.unlines
   , ".admin-row strong { color: #fff; font-weight: 400; }"
   , ".admin-row p { margin-top: .25rem; color: rgba(255,255,255,.65); font-size: .82rem; line-height: 1.45; }"
   , ".admin-row-actions { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; justify-content: flex-end; max-width: 420px; }"
+  , ".admin-inline-form { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(160px, 1fr) minmax(120px, .7fr) auto; gap: .55rem; align-items: center; margin-bottom: .8rem; }"
   , ".admin-muted.tiny { width: 100%; font-size: .7rem; max-height: 4.2rem; overflow: auto; }"
   , ".admin-qr-box { display: grid; gap: .45rem; justify-items: center; }"
   , ".admin-qr { width: 96px; height: 96px; padding: .35rem; background: rgba(255,255,255,.94); border-radius: 10px; object-fit: contain; }"
   , ".admin-copy-status { position: fixed; right: 1rem; bottom: 1rem; z-index: 50; min-height: 1.5rem; color: #160f0a; background: #d4b483; border-radius: 999px; padding: .55rem .85rem; box-shadow: 0 14px 40px rgba(0,0,0,.32); }"
   , ".admin-danger { border: 1px solid rgba(255,120,105,.45); color: #ffd7d1; background: rgba(255,120,105,.10); border-radius: 999px; padding: .46rem .72rem; cursor: pointer; }"
   , ".admin-error { color: #ffb4a8; min-height: 1.2rem; margin-top: .8rem; }"
-  , "@media (max-width: 760px) { .admin-top { align-items: flex-start; flex-direction: column; } .admin-actions { justify-content: flex-start; } .admin-grid { grid-template-columns: 1fr; } .admin-row { align-items: flex-start; flex-direction: column; } }"
+  , "@media (max-width: 760px) { .admin-top { align-items: flex-start; flex-direction: column; } .admin-actions { justify-content: flex-start; } .admin-grid { grid-template-columns: 1fr; } .admin-row { align-items: flex-start; flex-direction: column; } .admin-inline-form { grid-template-columns: 1fr; } }"
   ]

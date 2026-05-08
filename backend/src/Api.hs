@@ -34,6 +34,7 @@ import           Auth                       (generateToken, verifyPassword)
 import qualified Db
 import           Upload                     (SavedVideo (..), saveVideoUpload)
 import           Wedding.Types              (InviteLookup, Invitee (..), InviteeInput (..),
+                                             IpAssociationAdmin, IpAssociationInput,
                                              LinkInviteeBody, LoginRequest (..),
                                               RsvpLoginRequest (..),
                                              ResolveDuplicateBody (..),
@@ -80,6 +81,10 @@ type API =
   :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> "invitee" :> CookieHeader :> ReqBody '[JSON] LinkInviteeBody :> Put '[JSON] VideoAdmin
   :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> "download" :> CookieHeader :> Get '[OctetStream] DownloadFile
   :<|> "api" :> "admin" :> "videos" :> Capture "id" Text :> CookieHeader :> Delete '[JSON] NoContent
+  :<|> "api" :> "admin" :> "ip-associations" :> CookieHeader :> Get '[JSON] [IpAssociationAdmin]
+  :<|> "api" :> "admin" :> "ip-associations" :> CookieHeader :> ReqBody '[JSON] IpAssociationInput :> Post '[JSON] IpAssociationAdmin
+  :<|> "api" :> "admin" :> "ip-associations" :> Capture "id" Int64 :> CookieHeader :> ReqBody '[JSON] IpAssociationInput :> Put '[JSON] IpAssociationAdmin
+  :<|> "api" :> "admin" :> "ip-associations" :> Capture "id" Int64 :> CookieHeader :> Delete '[JSON] NoContent
 
 api :: Proxy API
 api = Proxy
@@ -108,6 +113,10 @@ server cfg var =
   :<|> linkVideoInviteeH var
   :<|> downloadVideoH cfg var
   :<|> deleteVideoH cfg var
+  :<|> listIpAssociationsH var
+  :<|> createIpAssociationH var
+  :<|> updateIpAssociationH var
+  :<|> deleteIpAssociationH var
 
 healthH :: Handler String
 healthH = pure "ok"
@@ -263,6 +272,28 @@ deleteVideoH cfg var vid mCookie = do
       let path = appVideoDir cfg </> T.unpack stored
       _ <- liftIO (try (removeFile path) :: IO (Either SomeException ()))
       pure NoContent
+
+listIpAssociationsH :: ConnVar -> Maybe Text -> Handler [IpAssociationAdmin]
+listIpAssociationsH var mCookie = do
+  requireAdmin var mCookie
+  withDb var Db.listIpAssociations
+
+createIpAssociationH :: ConnVar -> Maybe Text -> IpAssociationInput -> Handler IpAssociationAdmin
+createIpAssociationH var mCookie input = do
+  requireAdmin var mCookie
+  withDb var (`Db.createIpAssociation` input)
+
+updateIpAssociationH :: ConnVar -> Int64 -> Maybe Text -> IpAssociationInput -> Handler IpAssociationAdmin
+updateIpAssociationH var aid mCookie input = do
+  requireAdmin var mCookie
+  mAssoc <- withDb var (\conn -> Db.updateIpAssociation conn aid input)
+  maybe (throwError err404) pure mAssoc
+
+deleteIpAssociationH :: ConnVar -> Int64 -> Maybe Text -> Handler NoContent
+deleteIpAssociationH var aid mCookie = do
+  requireAdmin var mCookie
+  ok <- withDb var (`Db.deleteIpAssociation` aid)
+  if ok then pure NoContent else throwError err404
 
 withDb :: ConnVar -> (Connection -> IO a) -> Handler a
 withDb var action = do

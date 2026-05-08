@@ -9,6 +9,8 @@ module Wedding.Types
   , RsvpLoginRequest (..)
   , RsvpAdmin (..)
   , VideoAdmin (..)
+  , IpAssociationAdmin (..)
+  , IpAssociationInput (..)
   , LinkInviteeBody (..)
   , ResolveDuplicateBody (..)
   , VideoSubmittedResponse (..)
@@ -304,6 +306,61 @@ instance FromJSON VideoAdmin where
       <*> o .:? "ipAddress"
       <*> o .:  "resolutionStatus"
       <*> o .:  "createdAt"
+
+data IpAssociationAdmin = IpAssociationAdmin
+  { ipaId          :: Int64
+  , ipaInviteeId   :: Int64
+  , ipaInviteeName :: Text
+  , ipaInviteeCode :: Maybe Text
+  , ipaIpAddress   :: Text
+  , ipaSource      :: Text
+  , ipaFirstSeenAt :: Text
+  , ipaLastSeenAt  :: Text
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON IpAssociationAdmin where
+  toJSON a = object
+    [ "id"          .= ipaId a
+    , "inviteeId"   .= ipaInviteeId a
+    , "inviteeName" .= ipaInviteeName a
+    , "inviteeCode" .= ipaInviteeCode a
+    , "ipAddress"   .= ipaIpAddress a
+    , "source"      .= ipaSource a
+    , "firstSeenAt" .= ipaFirstSeenAt a
+    , "lastSeenAt"  .= ipaLastSeenAt a
+    ]
+
+instance FromJSON IpAssociationAdmin where
+  parseJSON = withObject "IpAssociationAdmin" $ \o ->
+    IpAssociationAdmin
+      <$> o .:  "id"
+      <*> o .:  "inviteeId"
+      <*> o .:  "inviteeName"
+      <*> o .:? "inviteeCode"
+      <*> o .:  "ipAddress"
+      <*> o .:  "source"
+      <*> o .:  "firstSeenAt"
+      <*> o .:  "lastSeenAt"
+
+data IpAssociationInput = IpAssociationInput
+  { ipiInviteeId :: Int64
+  , ipiIpAddress :: Text
+  , ipiSource    :: Text
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON IpAssociationInput where
+  toJSON i = object
+    [ "inviteeId" .= ipiInviteeId i
+    , "ipAddress" .= ipiIpAddress i
+    , "source"    .= ipiSource i
+    ]
+
+instance FromJSON IpAssociationInput where
+  parseJSON = withObject "IpAssociationInput" $ \o ->
+    IpAssociationInput
+      <$> o .:  "inviteeId"
+      <*> o .:  "ipAddress"
+      <*> o .:? "source" .!= "admin"
 
 newtype VideoSubmittedResponse = VideoSubmittedResponse
   { videoId :: Text

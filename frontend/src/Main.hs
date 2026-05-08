@@ -564,7 +564,7 @@ videoUploadOverlay openE = mdo
       elAttr "p" ("class" =: "construction-kicker") $ text "VIDEO"
       elAttr "h3" ("class" =: "construction-title") $ text "Sube tu mensaje"
       elAttr "p" ("class" =: "construction-copy") $
-        text "Disponible para invitados que ya confirmaron con su c\243digo."
+        text "M\225ndanos un video privado o p\250blico para proyectar en la boda, puedes mandar cuantos videos gustes pero procura que no pesen tanto por favor."
       elAttr "form" ("id" =: "video-upload-form" <> "class" =: "video-upload-form") $ do
         elAttr "textarea"
           ( "id" =: "video-upload-message"

@@ -26,6 +26,10 @@ module Db
   , listVideos
   , getVideo
   , deleteVideo
+  , listIpAssociations
+  , createIpAssociation
+  , updateIpAssociation
+  , deleteIpAssociation
   ) where
 
 import           Control.Applicative        ((<|>))
@@ -41,9 +45,10 @@ import           Database.PostgreSQL.Simple.FromRow
 import           System.Environment         (lookupEnv)
 import           Upload                     (SavedVideo (..))
 import           Wedding.Types              (AttendanceStatus (..), InviteLookup (..),
-                                              Invitee (..), InviteeInput (..),
-                                              LinkInviteeBody (..), RsvpAdmin (..),
-                                              RsvpRequest (..), VideoAdmin (..))
+                                               Invitee (..), InviteeInput (..),
+                                               IpAssociationAdmin (..), IpAssociationInput (..),
+                                               LinkInviteeBody (..), RsvpAdmin (..),
+                                               RsvpRequest (..), VideoAdmin (..))
 
 data SubmittedRsvp = SubmittedRsvp
   { submittedInvitee :: Maybe Invitee
@@ -84,6 +89,9 @@ instance FromRow RsvpAdmin where
 
 instance FromRow VideoAdmin where
   fromRow = VideoAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+instance FromRow IpAssociationAdmin where
+  fromRow = IpAssociationAdmin <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 initDb :: IO Connection
 initDb = do
@@ -421,6 +429,38 @@ deleteVideo conn vid = do
     []             -> Nothing
     (Only name:_) -> Just name
 
+listIpAssociations :: Connection -> IO [IpAssociationAdmin]
+listIpAssociations conn = query_ conn
+  ("SELECT a.id, a.invitee_id, i.name, i.code, a.ip_address::text, a.source, a.first_seen_at::text, a.last_seen_at::text " <>
+   "FROM invitee_ip_addresses a JOIN invitees i ON i.id = a.invitee_id " <>
+   "ORDER BY a.last_seen_at DESC, a.id DESC")
+
+createIpAssociation :: Connection -> IpAssociationInput -> IO IpAssociationAdmin
+createIpAssociation conn input = oneRow "createIpAssociation" =<< query conn
+  ("WITH inserted AS (" <>
+   "INSERT INTO invitee_ip_addresses (invitee_id, ip_address, source) VALUES (?, ?::inet, ?) " <>
+   "ON CONFLICT (invitee_id, ip_address) DO UPDATE SET last_seen_at = NOW(), source = EXCLUDED.source RETURNING *) " <>
+   "SELECT a.id, a.invitee_id, i.name, i.code, a.ip_address::text, a.source, a.first_seen_at::text, a.last_seen_at::text " <>
+   "FROM inserted a JOIN invitees i ON i.id = a.invitee_id")
+  (ipiInviteeId input, ipiIpAddress input, nonEmptyDefault "admin" (ipiSource input))
+
+updateIpAssociation :: Connection -> Int64 -> IpAssociationInput -> IO (Maybe IpAssociationAdmin)
+updateIpAssociation conn aid input = do
+  rows <- query conn
+    ("WITH updated AS (" <>
+     "UPDATE invitee_ip_addresses SET invitee_id = ?, ip_address = ?::inet, source = ?, last_seen_at = NOW() WHERE id = ? RETURNING *) " <>
+     "SELECT a.id, a.invitee_id, i.name, i.code, a.ip_address::text, a.source, a.first_seen_at::text, a.last_seen_at::text " <>
+     "FROM updated a JOIN invitees i ON i.id = a.invitee_id")
+    (ipiInviteeId input, ipiIpAddress input, nonEmptyDefault "admin" (ipiSource input), aid)
+  pure $ case rows of
+    []    -> Nothing
+    (a:_) -> Just a
+
+deleteIpAssociation :: Connection -> Int64 -> IO Bool
+deleteIpAssociation conn aid = do
+  n <- execute conn "DELETE FROM invitee_ip_addresses WHERE id = ?" (Only aid)
+  pure (n > 0)
+
 resolveInviteesByIp :: Connection -> Text -> IO [Invitee]
 resolveInviteesByIp conn ip = query conn
   ("SELECT i.id, i.name, i.code, i.max_guests, i.notes, i.created_at::text " <>
@@ -480,6 +520,9 @@ nonEmpty :: Text -> Maybe Text
 nonEmpty value =
   let stripped = T.strip value
    in if T.null stripped then Nothing else Just stripped
+
+nonEmptyDefault :: Text -> Text -> Text
+nonEmptyDefault fallback value = maybe fallback id (nonEmpty value)
 
 capGuests :: Int -> Int
 capGuests = max 1 . min 2
