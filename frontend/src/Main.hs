@@ -40,7 +40,7 @@ bodyW = do
     pure videoOpenE'
   videoUploadOverlay videoOpenE
   pb <- getPostBuild
-  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> rsvpInlinePrefillJS <> ";" <> videoUploadGuestJS)) <$ pb
+  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> cardScrollIndicatorsJS <> ";" <> rsvpInlinePrefillJS <> ";" <> videoUploadGuestJS)) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -107,6 +107,20 @@ navHighlightingJS =
   <> "});"
   <> "},{rootMargin:'-40% 0px -40% 0px',threshold:0});"
   <> "document.querySelectorAll('.image-section').forEach(function(s){obs.observe(s);});"
+  <> "})()"
+
+cardScrollIndicatorsJS :: String
+cardScrollIndicatorsJS =
+  "(function(){"
+  <> "function cards(){return Array.prototype.slice.call(document.querySelectorAll('.section-overlay .glass'));}"
+  <> "function ensure(card){var ind=card.__weddingScrollIndicator;if(ind)return ind;var overlay=card.closest('.section-overlay');if(!overlay)return null;ind=document.createElement('div');ind.className='card-scroll-indicator';ind.setAttribute('aria-hidden','true');var thumb=document.createElement('div');thumb.className='card-scroll-indicator-thumb';ind.appendChild(thumb);overlay.appendChild(ind);card.__weddingScrollIndicator=ind;card.addEventListener('scroll',function(){update(card);},{passive:true});return ind;}"
+  <> "function update(card){var ind=ensure(card);if(!ind)return;var overflow=card.scrollHeight-card.clientHeight>1;card.classList.toggle('has-card-scroll',overflow);ind.classList.toggle('is-visible',overflow);if(!overflow)return;var overlay=ind.parentNode;var r=card.getBoundingClientRect();var o=overlay.getBoundingClientRect();var inset=10;var trackH=Math.max(34,r.height-inset*2);var maxScroll=Math.max(1,card.scrollHeight-card.clientHeight);var thumbH=Math.max(32,trackH*(card.clientHeight/card.scrollHeight));var maxTop=Math.max(0,trackH-thumbH);var thumbTop=(card.scrollTop/maxScroll)*maxTop;ind.style.left=(r.right-o.left-inset)+'px';ind.style.top=(r.top-o.top+inset)+'px';ind.style.height=trackH+'px';ind.firstChild.style.height=thumbH+'px';ind.firstChild.style.transform='translateY('+thumbTop+'px)';}"
+  <> "function updateAll(){cards().forEach(update);}"
+  <> "function schedule(){requestAnimationFrame(updateAll);}"
+  <> "window.addEventListener('resize',schedule,{passive:true});window.addEventListener('orientationchange',schedule,{passive:true});window.addEventListener('load',schedule,{passive:true});"
+  <> "if(window.ResizeObserver){var ro=new ResizeObserver(schedule);cards().forEach(function(c){ro.observe(c);});}"
+  <> "if(window.MutationObserver){new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true,characterData:true});}"
+  <> "schedule();var n=0,t=setInterval(function(){updateAll();if(++n>80)clearInterval(t);},100);"
   <> "})()"
 
 videoUploadGuestJS :: String
@@ -1026,6 +1040,9 @@ siteCSS = T.unlines
   , ".section-overlay .glass::-webkit-scrollbar { width: .55rem; }"
   , ".section-overlay .glass::-webkit-scrollbar-track { background: rgba(255,255,255,.10); border-radius: 999px; }"
   , ".section-overlay .glass::-webkit-scrollbar-thumb { background: rgba(255,255,255,.46); border-radius: 999px; }"
+  , ".card-scroll-indicator { position: absolute; width: .34rem; border-radius: 999px; background: rgba(255,255,255,.14); box-shadow: 0 0 0 1px rgba(0,0,0,.10); opacity: 0; pointer-events: none; transition: opacity .18s ease; z-index: 4; }"
+  , ".card-scroll-indicator.is-visible { opacity: 1; }"
+  , ".card-scroll-indicator-thumb { position: absolute; inset: 0 0 auto; border-radius: inherit; background: rgba(255,255,255,.62); box-shadow: 0 0 10px rgba(255,255,255,.18); }"
   , ""
   -- These override .glass margin — must come after .glass in the cascade.
   , ".rsvp-confirm {"

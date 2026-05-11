@@ -9,7 +9,7 @@ array-0.5.4.0-BY9BworFlmHJapi9znoqNH:15
 assoc-1.0.2-9r5CYDItYfw2716RlsM2q0:2
 attoparsec-0.14.4-B2iQnzVBBFTKhcVPsQN0rt-attoparsec-internal:6
 attoparsec-0.14.4-I8c7AMvf6rV5ZJN2QPl657:16
-base:                    1888581
+base:                    1888599
 base-compat-0.11.2-JQpKDsVhHsCHPlgorbNGMx:118
 base-compat-batteries-0.11.2-Ga31QQ7sOlIgAVr2fMCMg:118
 base-orphans-0.8.7-68gGt71vpOZ5uwbcNbxwhZ:2
@@ -43,10 +43,10 @@ exceptions-0.10.5-BqyE5VZGB6MJU8pEcckH3M:2
 free-5.1.9-BT0DrMPCj7zEwehq6rjGJZ:20
 generically-0.1-35Te45UlhoWD8zU0TKv2Uc:1
 ghc-boot-th-8.10.7-FQtGTtjFMOPJdcMgIgVdDb:14800
-ghc-prim:                209086
+ghc-prim:                211567
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf:20022
 ghcjs-dom-0.9.4.0-7D07xJnME4h8365CyighbD:4827
-ghcjs-dom-jsffi-0.9.4.0-47s8EUYI9ptHH2NrIQGHdX:496583
+ghcjs-dom-jsffi-0.9.4.0-47s8EUYI9ptHH2NrIQGHdX:496585
 ghcjs-prim-0.1.1.0-HZUIQ7BTQrzF5jVh07mbue:10227
 hashable-1.3.5.0-6OQ8AF7BxUIJC2uGeto9JD:7
 haskell-src-exts-1.23.1-E46XVXkipvK1QffaMAgCvA:18
@@ -76,9 +76,9 @@ profunctors-5.6.2-5SxRgU7SWKJLS9EgQ0NK1D:16
 random-1.2.1.1-GdOCmgKIL7EDQkfgpQqW9R:7683
 ref-tf-0.5.0.1-7guyMWOh5nf1ozHjvkTku5:1
 reflection-2.1.6-2geGEngscoyF11gJEzOGky:7717
-reflex-0.9.2.0-H5N7cDK9stQEp1UcDEHTtO:7853495
+reflex-0.9.2.0-H5N7cDK9stQEp1UcDEHTtO:7853500
 reflex-dom-0.6.3.1-CFudMpsRYLQ1FGN5ho4SWm:3
-reflex-dom-core-0.8.0.0-BVBpLyoKjcc3VoNa9MZmjI:12606333
+reflex-dom-core-0.8.0.0-BVBpLyoKjcc3VoNa9MZmjI:12606337
 scientific-0.3.7.0-5mgRNvjYRWv3mPytIhdHjG:85201
 semialign-1.2.0.1-3lRV8p74IjdCPCrrCZHX18:24341
 semigroupoids-5.3.7-ExpVh30JA1vHU0pUN1D1KP:27
@@ -105,7 +105,7 @@ uuid-types-1.0.5-3IW8DmCgl8oIpz1iDmHBqE:3732
 vector-0.12.3.1-Jn822ltAQMG9EAuGGatnyM:26727
 wedding-shared-0.1.0-KmThU85UuLM3a4MHf2g3Bw:1
 witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6:2
-zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:2450964
+zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd:2452935
 
 
 code size per module:
@@ -339,7 +339,7 @@ base
     GHC.Conc.Sync:                      1
     GHC.ConsoleHandler:                 1
     GHC.Constants:                      1
-    GHC.Desugar:                        60900
+    GHC.Desugar:                        60901
     GHC.Enum:                           1
     GHC.Environment:                    1178
     GHC.Err:                            31253
@@ -406,7 +406,7 @@ base
     GHC.Records:                        1
     GHC.ResponseFile:                   1
     GHC.ST:                             262
-    GHC.STRef:                          49802
+    GHC.STRef:                          49816
     GHC.Show:                           1
     GHC.Stable:                         1
     GHC.StableName:                     1
@@ -421,7 +421,7 @@ base
     GHC.TypeLits:                       1
     GHC.TypeNats:                       1
     GHC.Unicode:                        254
-    GHC.Weak:                           68333
+    GHC.Weak:                           68336
     GHC.Word:                           16622
     Numeric:                            1
     Numeric.Natural:                    1
@@ -952,7 +952,7 @@ ghc-prim
     GHC.Prim.Ext:                       221
     GHC.PrimopWrappers:                 9423
     GHC.Tuple:                          7276
-    GHC.Types:                          136477
+    GHC.Types:                          138958
 
 ghcjs-base-0.2.0.3-7FzwNCL6iT1GrlwZ9umVZf
     Data.JSString:                      1
@@ -1628,7 +1628,7 @@ ghcjs-dom-jsffi-0.9.4.0-47s8EUYI9ptHH2NrIQGHdX
     GHCJS.DOM.JSFFI.SpeechRecognition:  1
     GHCJS.DOM.JSFFI.SpeechRecognitionError:1
     GHCJS.DOM.JSFFI.SpeechRecognitionEvent:1
-    GHCJS.DOM.JSFFI.Window:             27783
+    GHCJS.DOM.JSFFI.Window:             27785
     GHCJS.DOM.JSFFI.XMLHttpRequest:     370337
     GHCJS.DOM.Types:                    1
 
@@ -2011,7 +2011,7 @@ reflex-0.9.2.0-H5N7cDK9stQEp1UcDEHTtO
     Reflex.Requester.Base:              1240967
     Reflex.Requester.Base.Internal:     1
     Reflex.Requester.Class:             1
-    Reflex.Spider:                      4745974
+    Reflex.Spider:                      4745979
     Reflex.Spider.Internal:             1
     Reflex.Time:                        165008
     Reflex.TriggerEvent.Base:           5369
@@ -2032,7 +2032,7 @@ reflex-dom-core-0.8.0.0-BVBpLyoKjcc3VoNa9MZmjI
     Reflex.Dom.Builder.Class:           263959
     Reflex.Dom.Builder.Class.Events:    1
     Reflex.Dom.Builder.Class.TH:        1
-    Reflex.Dom.Builder.Hydratable:      9979561
+    Reflex.Dom.Builder.Hydratable:      9979562
     Reflex.Dom.Builder.Immediate:       1
     Reflex.Dom.Builder.InputDisabled:   1
     Reflex.Dom.Builder.Static:          1
@@ -2051,8 +2051,8 @@ reflex-dom-core-0.8.0.0-BVBpLyoKjcc3VoNa9MZmjI
     Reflex.Dom.Widget.Basic:            1
     Reflex.Dom.Widget.Input:            1
     Reflex.Dom.Widget.Lazy:             1
-    Reflex.Dom.Widget.Resize:           603931
-    Reflex.Dom.Xhr:                     15300
+    Reflex.Dom.Widget.Resize:           603932
+    Reflex.Dom.Xhr:                     15302
     Reflex.Dom.Xhr.Exception:           34472
     Reflex.Dom.Xhr.Foreign:             1
     Reflex.Dom.Xhr.FormData:            2617
@@ -2390,9 +2390,9 @@ witherable-0.4.2-7IW33CuC4SlBCxRU6x2Mh6
     Witherable:                         1
 
 zenc-0.1.2-7YgksDoZczjIPnTbRXIQpd
-    Text.Encoding.Z:                    2450964
+    Text.Encoding.Z:                    2452935
 
 
 
-packed metadata: 1067665
+packed metadata: 1068252
 
