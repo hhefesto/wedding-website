@@ -1386,6 +1386,12 @@ siteCSS = T.unlines
   , "  left: calc(50% - .08rem);"
   , "  transform: translateY(-35%) rotate(42deg);"
   , "}"
+  , "@media (min-width: 761px) {"
+  , "  .back-to-top {"
+  , "    bottom: clamp(6.5rem, 9vw, 10rem);"
+  , "    right: max(1.6rem, calc((100vw - var(--photo-frame-width)) / 2 + 1rem));"
+  , "  }"
+  , "}"
   , ""
 
   -- ── Reduced motion ────────────────────────────────────────────────────────
