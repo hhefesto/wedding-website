@@ -1347,7 +1347,7 @@ siteCSS = T.unlines
   -- ── Back to top ───────────────────────────────────────────────────────────
   , ".back-to-top {"
   , "  position: fixed;"
-  , "  bottom: 5rem;"
+  , "  bottom: 4.55rem;"
   , "  right: 1.6rem;"
   , "  z-index: 300;"
   , "  width: 3rem;"
@@ -1388,7 +1388,7 @@ siteCSS = T.unlines
   , "}"
   , "@media (min-width: 761px) {"
   , "  .back-to-top {"
-  , "    bottom: clamp(6.5rem, 9vw, 10rem);"
+  , "    bottom: clamp(6rem, 8.2vw, 9.25rem);"
   , "    right: max(1.6rem, calc((100vw - var(--photo-frame-width)) / 2 + 1rem));"
   , "  }"
   , "}"
