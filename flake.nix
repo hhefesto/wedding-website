@@ -27,12 +27,13 @@
         database = ./nixosModules/database.nix;
         backend  = ./nixosModules/backend.nix;
         frontend = ./nixosModules/frontend.nix;
+        nginx    = ./nixosModules/nginx.nix;
+        # Legacy positional factory — kept until all consumers move to the
+        # profile module below.
         wedding  = import ./nixosModules/wedding.nix;
-        default  = { imports = [
-          ./nixosModules/database.nix
-          ./nixosModules/backend.nix
-          ./nixosModules/frontend.nix
-        ]; };
+        # Canonical interface: services.wedding.profile.* with packages and
+        # secret paths defaulting to this flake's own outputs.
+        default  = import ./nixosModules/profile.nix inputs.self;
       };
 
       perSystem = { self', system, inputs', ... }:
@@ -195,6 +196,65 @@
           done
           mkdir -p "$out"
         '';
+
+        # Ensures the canonical profile module keeps its interface: correct
+        # wiring of nginx/backend/database plus dev-mode conveniences. All
+        # assertions are eval-time; production mode is exercised from the
+        # consumer flake (it needs agenix).
+        checks.wedding-profile-interface =
+          let
+            lib = inputs.nixpkgs.lib;
+            sys = lib.nixosSystem {
+              inherit system;
+              modules = [
+                inputs.self.nixosModules.default
+                {
+                  services.wedding.profile = {
+                    enable = true;
+                    mode = "development";
+                    serverName = "wedding.local";
+                    ports = { nginx = 8084; backend = 3001; };
+                  };
+                }
+              ];
+            };
+            c = sys.config;
+            vhost = c.services.nginx.virtualHosts."wedding.local";
+            checkList = [
+              { name = "api proxyPass";
+                ok = vhost.locations."/api/".proxyPass == "http://127.0.0.1:3001"; }
+              { name = "login rate limit";
+                ok = lib.hasInfix "limit_req zone=wedding_login"
+                       vhost.locations."= /api/admin/login".extraConfig; }
+              { name = "limit_req zone declared";
+                ok = lib.hasInfix "limit_req_zone" c.services.nginx.appendHttpConfig; }
+              { name = "admin alias";
+                ok = toString vhost.locations."/admin/".alias
+                       == "${self'.packages.admin-website}/"; }
+              { name = "admin redirect";
+                ok = vhost.locations."= /admin".return == "302 /admin/"; }
+              { name = "self-default backend package";
+                ok = c.services.wedding.backend.package == self'.packages.wedding-backend; }
+              { name = "self-default static root";
+                ok = toString vhost.root == toString self'.packages.website; }
+              { name = "security headers";
+                ok = lib.hasInfix "X-Content-Type-Options" vhost.extraConfig; }
+              { name = "no HSTS in development";
+                ok = !(lib.hasInfix "Strict-Transport-Security" vhost.extraConfig); }
+              { name = "dev hosts alias";
+                ok = lib.elem "wedding.local" c.networking.hosts."127.0.0.1"; }
+              { name = "dev postgres trust auth";
+                ok = lib.hasInfix "host all wedding 127.0.0.1/32 trust"
+                       c.services.postgresql.authentication; }
+              { name = "dev cookie not secure";
+                ok = c.systemd.services.wedding-backend.environment.WEDDING_COOKIE_SECURE == "false"; }
+            ];
+            failed = builtins.filter (x: !x.ok) checkList;
+          in
+            if failed == [ ]
+            then pkgs.runCommand "check-wedding-profile-interface" {} "mkdir -p $out"
+            else throw "wedding-profile-interface failed: ${
+              lib.concatMapStringsSep ", " (x: x.name) failed}";
 
         # Ensures the reusable NixOS module interface stays in sync with the
         # package set it expects from downstream flakes.
