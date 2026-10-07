@@ -5,11 +5,13 @@ build-type:    Simple
 
 executable wedding-frontend
   main-is:          Main.hs
+  other-modules:    Fotos
   hs-source-dirs:   src
   build-depends:
       base        >= 4.12 && < 5
     , bytestring
     , containers
+    , ghcjs-dom
     , jsaddle
     , reflex
     , reflex-dom

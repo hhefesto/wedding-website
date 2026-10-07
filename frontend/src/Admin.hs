@@ -18,6 +18,8 @@ import           Wedding.Types            (AttendanceStatus (..), Invitee (..),
                                             IpAssociationAdmin (..), IpAssociationInput (..),
                                             InviteeInput (..), LinkInviteeBody (..),
                                             LoginRequest (..), RsvpAdmin (..),
+                                            MediaAdmin (..), MediaHiddenBody (..),
+                                            MediaKind (..),
                                             ResolveDuplicateBody (..),
                                             VideoAdmin (..))
 
@@ -29,12 +31,13 @@ headW = do
   el "title" $ text "Wedding dashboard"
   el "style" $ text adminCSS
 
-data AdminTab = TabInvitees | TabRsvps | TabVideos | TabIps
+data AdminTab = TabInvitees | TabRsvps | TabVideos | TabMedia | TabIps
   deriving (Eq)
 
 data RsvpAdminAction = LinkRsvp Text (Maybe Int64) | DeleteRsvp Text | ResolveDuplicate Text Text
 data VideoAdminAction = LinkVideo Text (Maybe Int64) | DeleteVideo Text
 data IpAdminAction = CreateIp IpAssociationInput | UpdateIp Int64 IpAssociationInput | DeleteIp Int64
+data MediaAdminAction = SetMediaHidden Text Bool | DeleteMedia Text
 
 adminRoot :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 adminRoot = mdo
@@ -86,15 +89,20 @@ adminDashboard loggedInE = elAttr "main" ("class" =: "admin-page") $ mdo
   rsvpsRespE <- performRequestAsync (xhrGet "/api/admin/rsvps" <$ loadE)
   videosRespE <- performRequestAsync (xhrGet "/api/admin/videos" <$ loadE)
   ipsRespE <- performRequestAsync (xhrGet "/api/admin/ip-associations" <$ loadE)
+  -- Guest uploads keep arriving during the party: refresh them on a timer.
+  mediaTickE <- tickLossyFromPostBuildTime 30
+  mediaRespE <- performRequestAsync (xhrGet "/api/admin/media" <$ leftmost [loadE, () <$ mediaTickE])
   inviteesDyn <- holdDyn [] (decodeXhrList <$> inviteesRespE)
   rsvpsDyn <- holdDyn [] (decodeXhrList <$> rsvpsRespE)
   videosDyn <- holdDyn [] (decodeXhrList <$> videosRespE)
   ipsDyn <- holdDyn [] (decodeXhrList <$> ipsRespE)
+  mediaDyn <- holdDyn [] (decodeXhrList <$> mediaRespE)
   refreshE <- elAttr "section" ("class" =: "admin-panel") $ do
     panelDyn <- dyn $ ffor tabDyn $ \tab -> case tab of
       TabInvitees -> adminInviteesPanel inviteesDyn
       TabRsvps    -> adminRsvpsPanel inviteesDyn rsvpsDyn
       TabVideos   -> adminVideosPanel inviteesDyn videosDyn
+      TabMedia    -> adminMediaPanel mediaDyn
       TabIps      -> adminIpsPanel inviteesDyn ipsDyn
     switchHold never panelDyn
   logoutRespE <- performRequestAsync (xhrPostNoBody "/api/admin/logout" <$ logoutClickE)
@@ -105,11 +113,13 @@ adminTabs = elAttr "nav" ("class" =: "admin-tabs") $ mdo
   (inviteBtn, _) <- elDynAttr' "button" (tabAttrs TabInvitees <$> tabDyn) $ text "Invitados"
   (rsvpBtn, _) <- elDynAttr' "button" (tabAttrs TabRsvps <$> tabDyn) $ text "RSVPs"
   (videoBtn, _) <- elDynAttr' "button" (tabAttrs TabVideos <$> tabDyn) $ text "Videos"
+  (mediaBtn, _) <- elDynAttr' "button" (tabAttrs TabMedia <$> tabDyn) $ text "Fotos"
   (ipBtn, _) <- elDynAttr' "button" (tabAttrs TabIps <$> tabDyn) $ text "IPs"
   tabDyn <- holdDyn TabInvitees $ leftmost
     [ TabInvitees <$ domEvent Click inviteBtn
     , TabRsvps    <$ domEvent Click rsvpBtn
     , TabVideos   <$ domEvent Click videoBtn
+    , TabMedia    <$ domEvent Click mediaBtn
     , TabIps      <$ domEvent Click ipBtn
     ]
   pure tabDyn
@@ -244,6 +254,74 @@ adminVideoRow inviteesDyn videoDyn = elAttr "article" ("class" =: "admin-row") $
       , attachWith (\vid _ -> LinkVideo vid Nothing) (current vidD) (domEvent Click unlinkBtn)
       , DeleteVideo <$> (current vidD `tag` domEvent Click deleteBtn)
       ]
+
+-- | Guest photos & videos from the QR upload page. Hiding removes an item
+-- from the public gallery; deleting also removes the full-quality original,
+-- so it takes a second, confirming click.
+adminMediaPanel :: MonadWidget t m => Dynamic t [MediaAdmin] -> m (Event t ())
+adminMediaPanel mediaDyn = elAttr "div" ("class" =: "admin-card") $ do
+  el "h2" $ do
+    text "Fotos y videos de invitados ("
+    dynText (T.pack . show . length <$> mediaDyn)
+    text ")"
+  elAttr "p" ("class" =: "admin-muted") $
+    text "Se publican al instante en la galer\237a. \"Ocultar\" la quita de la galer\237a sin borrar nada; los originales en calidad completa quedan en el servidor (media/originals)."
+  actionDyn <- elAttr "div" ("class" =: "admin-media-grid") $ simpleList mediaDyn adminMediaRow
+  let actionE = switchDyn (leftmost <$> actionDyn)
+      reqE = ffor actionE $ \action -> case action of
+        SetMediaHidden mid hidden -> adminJsonRequest "PUT" ("/api/admin/media/" <> mid <> "/hidden") (MediaHiddenBody hidden)
+        DeleteMedia mid           -> xhrDelete ("/api/admin/media/" <> mid)
+  respE <- performRequestAsync reqE
+  pure (xhrOk respE)
+
+adminMediaRow :: MonadWidget t m => Dynamic t MediaAdmin -> m (Event t MediaAdminAction)
+adminMediaRow mediaDyn =
+  elDynAttr "article" (ffor mediaDyn $ \m -> "class" =: ("admin-media" <> if maHidden m then " is-hidden" else "")) $ mdo
+    elDynAttr "img" (ffor mediaDyn $ \m -> case maThumbUrl m of
+      Just url -> "class" =: "admin-media-thumb" <> "src" =: url <> "alt" =: "" <> "loading" =: "lazy"
+      Nothing  -> "class" =: "admin-media-thumb is-empty" <> "alt" =: "") blank
+    elAttr "div" ("class" =: "admin-media-body") $ do
+      el "strong" $ dynText (maOriginalFilename <$> mediaDyn)
+      el "p" $ dynText (mediaMeta <$> mediaDyn)
+      el "p" $ dynText (mediaSource <$> mediaDyn)
+    (hideBtn, deleteBtn) <- elAttr "div" ("class" =: "admin-row-actions") $ do
+      (h, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $
+        dynText (ffor mediaDyn $ \m -> if maHidden m then "Mostrar" else "Ocultar")
+      (d, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $
+        dynText (ffor armedD $ \armed -> if armed then "\191Borrar original?" else "Eliminar")
+      pure (h, d)
+    let deleteClickE = domEvent Click deleteBtn
+        confirmedE = gate (current armedD) deleteClickE
+    armedD <- holdDyn False $ leftmost [True <$ deleteClickE, False <$ confirmedE, False <$ domEvent Mouseleave deleteBtn]
+    pure $ leftmost
+      [ (\m -> SetMediaHidden (maId m) (not (maHidden m))) <$> (current mediaDyn `tag` domEvent Click hideBtn)
+      , DeleteMedia . maId <$> (current mediaDyn `tag` confirmedE)
+      ]
+
+mediaMeta :: MediaAdmin -> Text
+mediaMeta m = T.intercalate " \183 "
+  [ case maKind m of MediaPhoto -> "Foto"; MediaVideo -> "Video"
+  , formatMegabytes (maSizeBytes m)
+  , statusLabel (maStatus m) <> if maHidden m then " (oculto)" else ""
+  ]
+  where
+    statusLabel st = case st of
+      "ready"      -> "Publicado"
+      "processing" -> "Procesando"
+      "uploading"  -> "Subiendo"
+      "failed"     -> "Error al procesar"
+      other        -> other
+
+mediaSource :: MediaAdmin -> Text
+mediaSource m = T.intercalate " \183 " $
+  [ maybe "Sin nombre" id (maUploaderName m) ]
+  ++ maybe [] pure (maIpAddress m)
+  ++ [ T.take 16 (maCreatedAt m) ]
+
+formatMegabytes :: Int64 -> Text
+formatMegabytes bytes =
+  let tenths = (bytes * 10 + 524288) `div` 1048576
+   in T.pack (show (tenths `div` 10)) <> "." <> T.pack (show (tenths `mod` 10)) <> " MB"
 
 adminIpsPanel :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t [IpAssociationAdmin] -> m (Event t ())
 adminIpsPanel inviteesDyn ipsDyn = elAttr "div" ("class" =: "admin-card") $ do
@@ -501,5 +579,13 @@ adminCSS = T.unlines
   , ".admin-copy-status { position: fixed; right: 1rem; bottom: 1rem; z-index: 50; min-height: 1.5rem; color: #160f0a; background: #d4b483; border-radius: 999px; padding: .55rem .85rem; box-shadow: 0 14px 40px rgba(0,0,0,.32); }"
   , ".admin-danger { border: 1px solid rgba(255,120,105,.45); color: #ffd7d1; background: rgba(255,120,105,.10); border-radius: 999px; padding: .46rem .72rem; cursor: pointer; }"
   , ".admin-error { color: #ffb4a8; min-height: 1.2rem; margin-top: .8rem; }"
+  , ".admin-media-grid { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }"
+  , ".admin-media { display: grid; gap: .6rem; padding: .7rem; border: 1px solid rgba(255,255,255,.10); border-radius: 14px; background: rgba(0,0,0,.14); }"
+  , ".admin-media.is-hidden { opacity: .55; }"
+  , ".admin-media-thumb { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: rgba(255,255,255,.06); }"
+  , ".admin-media-thumb.is-empty { visibility: visible; }"
+  , ".admin-media-body strong { color: #fff; font-weight: 400; word-break: break-all; }"
+  , ".admin-media-body p { margin-top: .25rem; color: rgba(255,255,255,.65); font-size: .78rem; line-height: 1.45; }"
+  , ".admin-media .admin-row-actions { justify-content: flex-start; }"
   , "@media (max-width: 760px) { .admin-top { align-items: flex-start; flex-direction: column; } .admin-actions { justify-content: flex-start; } .admin-grid { grid-template-columns: 1fr; } .admin-row { align-items: flex-start; flex-direction: column; } .admin-inline-form { grid-template-columns: 1fr; } }"
   ]

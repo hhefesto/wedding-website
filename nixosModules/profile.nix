@@ -30,6 +30,7 @@ let
   selfPackages = self.packages.${pkgs.system};
 
   defaultVideoDir = "/var/lib/wedding/videos";
+  defaultMediaDir = "/var/lib/wedding/media";
 
   dbPasswordFile =
     if cfg.secrets.dbPasswordFile != null
@@ -159,8 +160,27 @@ in {
 
     videoMaxBytes = lib.mkOption {
       type = lib.types.int;
-      default = 200 * 1024 * 1024;
+      # Cloudflare (free plan) rejects request bodies over 100 MB.
+      default = 95 * 1024 * 1024;
       description = "Maximum accepted video upload size in bytes.";
+    };
+
+    mediaDir = lib.mkOption {
+      type = lib.types.str;
+      default = defaultMediaDir;
+      description = "Directory for guest photo/video uploads (originals and public derivatives).";
+    };
+
+    mediaMaxBytes = lib.mkOption {
+      type = lib.types.int;
+      default = 4 * 1024 * 1024 * 1024;
+      description = "Maximum size of a single guest photo/video upload, in bytes (uploads are chunked).";
+    };
+
+    mediaMinFreeBytes = lib.mkOption {
+      type = lib.types.int;
+      default = 5 * 1024 * 1024 * 1024;
+      description = "Refuse new guest uploads when free disk space would drop below this many bytes.";
     };
 
     uploadMaxBodySize = lib.mkOption {
@@ -225,6 +245,9 @@ in {
         package       = cfg.packages.backend;
         videoDir      = cfg.videoDir;
         videoMaxBytes = cfg.videoMaxBytes;
+        mediaDir      = cfg.mediaDir;
+        mediaMaxBytes = cfg.mediaMaxBytes;
+        mediaMinFreeBytes = cfg.mediaMinFreeBytes;
         cookieSecure  = production;
         publicBaseUrl = "${if production then "https" else "http"}://${cfg.serverName}";
       };
@@ -284,8 +307,10 @@ in {
         // {
           LoadCredential = [ "admin-hash:${adminHashFile}" ];
         }
-        // lib.optionalAttrs (cfg.videoDir != defaultVideoDir) {
-          ReadWritePaths = [ cfg.videoDir ];
+        // lib.optionalAttrs (cfg.videoDir != defaultVideoDir || cfg.mediaDir != defaultMediaDir) {
+          ReadWritePaths =
+            lib.optional (cfg.videoDir != defaultVideoDir) cfg.videoDir
+            ++ lib.optional (cfg.mediaDir != defaultMediaDir) cfg.mediaDir;
         };
 
       systemd.services.wedding-migrate.serviceConfig = hardening;

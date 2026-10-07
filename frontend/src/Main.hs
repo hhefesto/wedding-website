@@ -10,7 +10,12 @@ import Data.Aeson (encode)
 import Control.Monad (forM_, void)
 import Language.Javascript.JSaddle (eval, MonadJSM, liftJSM)
 import Reflex.Dom
+import qualified GHCJS.DOM as DOM
+import qualified GHCJS.DOM.Location as Location
+import qualified GHCJS.DOM.Window as Window
 import Wedding.Types (AttendanceStatus (..), RsvpRequest (..))
+
+import Fotos (fotosCSS, fotosPage, galleryBand, galleryFeed)
 
 -- ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -20,21 +25,33 @@ main = mainWidgetWithHead headW bodyW
 headW :: DomBuilder t m => m ()
 headW = do
   el "title" $ text "Daniel y Ana Cristina — 10 · 10 · 26"
-  el "style" $ text siteCSS
+  el "style" $ text (siteCSS <> fotosCSS)
 
 -- ── Body ──────────────────────────────────────────────────────────────────────
 
+-- /fotos is the focused upload page the QR code points to; everything else
+-- is the invitation.
 bodyW :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 bodyW = do
+  path <- liftJSM $ DOM.currentWindowUnchecked >>= Window.getLocation >>= Location.getPathname
+  if T.dropWhileEnd (== '/') path == "/fotos"
+    then fotosPage
+    else siteW
+
+siteW :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
+siteW = do
   videoOpenE <- elAttr "div" ("class" =: "site-shell") $ do
     introOverlay
     progressBar
     heroSection
     rsvpSection
     ubicacionSection
+    itinerarioSection
     dressCodeSection
     mesaRegalosSection
     videoOpenE' <- videoMsgSection
+    fotosSection
+    galleryBand "galeria" =<< galleryFeed never
     fixedNav
     backToTop
     pure videoOpenE'
@@ -103,10 +120,14 @@ navHighlightingJS =
   <> "entries.forEach(function(e){"
   <> "var id=e.target.id;"
   <> "var lnk=document.querySelector('[data-section=\"'+id+'\"]');"
-  <> "if(lnk){lnk.classList.toggle('is-active',e.isIntersecting);}"
+  <> "if(lnk){lnk.classList.toggle('is-active',e.isIntersecting);"
+  <> "var nav=lnk.parentNode;if(e.isIntersecting&&nav.scrollWidth>nav.clientWidth){nav.scrollTo({left:lnk.offsetLeft-(nav.clientWidth-lnk.offsetWidth)/2,behavior:'smooth'});}}"
   <> "});"
   <> "},{rootMargin:'-40% 0px -40% 0px',threshold:0});"
-  <> "document.querySelectorAll('.image-section').forEach(function(s){obs.observe(s);});"
+  -- postBuild fires before the widget tree is attached, so wait for it.
+  <> "(function start(){var secs=document.querySelectorAll('.image-section');"
+  <> "if(!secs.length){setTimeout(start,50);return;}"
+  <> "secs.forEach(function(s){obs.observe(s);});})();"
   <> "})()"
 
 cardScrollIndicatorsJS :: String
@@ -132,7 +153,7 @@ videoUploadGuestJS =
   <> "function enable(){var b=document.getElementById('video-upload-open');if(b){b.classList.remove('is-disabled');b.setAttribute('aria-disabled','false');}}"
   <> "function progress(v,show){var wrap=document.getElementById('video-upload-progress');var bar=document.getElementById('video-upload-progress-bar');var txt=document.getElementById('video-upload-progress-text');var n=Math.max(0,Math.min(100,Math.round(v||0)));if(wrap){wrap.hidden=!show;wrap.classList.toggle('is-error',false);}if(bar){bar.style.width=n+'%';bar.setAttribute('aria-valuenow',String(n));}if(txt)txt.textContent=n+'%';}"
   <> "function fail(m){var wrap=document.getElementById('video-upload-progress');if(wrap)wrap.classList.add('is-error');status(m,true);}"
-  <> "function upload(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.guestReady)return;f.dataset.guestReady='1';f.addEventListener('submit',function(e){e.preventDefault();var file=document.getElementById('video-upload-file');if(!file||!file.files||!file.files.length){fail('Selecciona un video.');return;}var data=new FormData(f);data.set('file',file.files[0],file.files[0].name);var c=code();if(c)data.set('invitationCode',c);var xhr=new XMLHttpRequest();xhr.open('POST','/api/videos');xhr.withCredentials=true;xhr.upload.onprogress=function(ev){if(ev.lengthComputable)progress((ev.loaded/ev.total)*100,true);};xhr.onload=function(){if(xhr.status>=200&&xhr.status<300){progress(100,true);status('Video recibido. Gracias por enviarlo.',false);f.reset();}else{fail(clean(xhr.responseText)||'No se pudo subir el video. Intentalo de nuevo.');}};xhr.onerror=function(){fail('No se pudo subir el video. Intentalo de nuevo.');};progress(0,true);status('Subiendo video...',false);xhr.send(data);});}"
+  <> "function upload(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.guestReady)return;f.dataset.guestReady='1';f.addEventListener('submit',function(e){e.preventDefault();var file=document.getElementById('video-upload-file');if(!file||!file.files||!file.files.length){fail('Selecciona un video.');return;}var data=new FormData(f);var c=code();if(c)data.set('invitationCode',c);var xhr=new XMLHttpRequest();xhr.open('POST','/api/videos');xhr.withCredentials=true;xhr.upload.onprogress=function(ev){if(ev.lengthComputable)progress((ev.loaded/ev.total)*100,true);};xhr.onload=function(){if(xhr.status>=200&&xhr.status<300){progress(100,true);status('Video recibido. Gracias por enviarlo.',false);f.reset();}else{fail(clean(xhr.responseText)||'No se pudo subir el video. Intentalo de nuevo.');}};xhr.onerror=function(){fail('No se pudo subir el video. Intentalo de nuevo.');};progress(0,true);status('Subiendo video...',false);xhr.send(data);});}"
   <> "function start(){enable();upload();}"
   <> "start();var n=0,t=setInterval(function(){start();if(++n>100)clearInterval(t);},50);"
   <> "})()"
@@ -173,6 +194,7 @@ fixedNav =
    <> "class"      =: "fixed-nav"
    <> "aria-label" =: "Secciones"
     ) $
+    elAttr "div" ("class" =: "fixed-nav-track") $
     forM_ navItems $ \(href, label) ->
       elAttr "a"
         ( "href"         =: href
@@ -184,9 +206,11 @@ fixedNav =
     navItems =
       [ ("#rsvp",          "RSVP")
       , ("#ubicacion",     "UBICACI\211N")
+      , ("#itinerario",    "ITINERARIO")
       , ("#dress-code",    "DRESS CODE")
       , ("#mesa-regalos",  "REGALOS")
       , ("#video-mensaje", "VIDEO")
+      , ("#fotos",         "FOTOS")
       ]
 
 -- ── UBICACIÓN ────────────────────────────────────────────────────────────────
@@ -207,7 +231,7 @@ ubicacionSection =
         el "p" $ text "Gran Terraza"
         el "p" $ text "Vista Real Country Club"
         el "p" $ text "6 pm"
-        qrBlock "https://www.google.com/maps/search/?api=1&query=20.5229282,-100.4039031" "qr-location.png" "Abrir ubicaci\243n"
+        qrBlock True "https://www.google.com/maps/search/?api=1&query=20.5229282,-100.4039031" "qr-location.png" "Abrir ubicaci\243n"
         elAttr "iframe"
           ( "class"          =: "map-embed"
          <> "src"            =: "https://maps.google.com/maps?q=20.5229282,-100.4039031&z=17&output=embed&hl=es"
@@ -215,6 +239,37 @@ ubicacionSection =
          <> "loading"        =: "lazy"
          <> "referrerpolicy" =: "no-referrer-when-downgrade"
           ) blank
+
+-- ── ITINERARIO ───────────────────────────────────────────────────────────────
+-- The printed itinerary card, presented as stationery resting on a dark,
+-- candle-lit table. The image already carries its own typography, so there is
+-- no glass card: the paper itself is the content. Tapping opens it full size.
+
+itinerarioSection :: DomBuilder t m => m ()
+itinerarioSection =
+  secImage "itinerario" $
+    elAttr "div" ("class" =: "itinerario-stage") $ do
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
+        text "ITINERARIO"
+      elAttr "a"
+        ( "class"  =: "itinerario-link"
+       <> "href"   =: "images/itinerario.jpeg"
+       <> "target" =: "_blank"
+       <> "rel"    =: "noopener"
+        ) $ do
+        elAttr "span" ("class" =: "itinerario-settle") $
+          elAttr "span" ("class" =: "itinerario-card") $ do
+            elAttr "img"
+              ( "class"    =: "itinerario-img"
+             <> "src"      =: "images/itinerario.jpeg"
+             <> "alt"      =: "Itinerario del 10 de octubre de 2026: 5:30 p. m. llegada de invitados; 6:00 p. m. ceremonia; 7:00 p. m. c\243ctel; 8:00 p. m. cena."
+             <> "width"    =: "1070"
+             <> "height"   =: "1470"
+             <> "loading"  =: "lazy"
+             <> "decoding" =: "async"
+              ) blank
+            elAttr "span" ("class" =: "itinerario-sheen" <> "aria-hidden" =: "true") blank
+        elAttr "span" ("class" =: "itinerario-hint") $ text "VER EN GRANDE"
 
 -- ── DRESS CODE ───────────────────────────────────────────────────────────────
 
@@ -494,24 +549,24 @@ mesaRegalosSection =
       elAttr "div" ("class" =: "glass rect registry-card" <> "data-reveal" =: "") $ do
         elAttr "p" ("class" =: "mesa-label") $ text "LIVERPOOL"
         elAttr "p" ("class" =: "registry-number") $ text "51981423"
-        qrBlock
+        qrBlock True
           "https://mesaderegalos.liverpool.com.mx/milistaderegalos/51981423"
           "qr-registry.png"
           "Ver mesa de regalos"
 
-qrBlock :: DomBuilder t m => Text -> Text -> Text -> m ()
-qrBlock url image label =
+-- | A button link plus a QR code that is itself the same link. External
+-- destinations open in a new tab; on-site ones (/fotos) stay in this tab.
+qrBlock :: DomBuilder t m => Bool -> Text -> Text -> Text -> m ()
+qrBlock newTab url image label =
   elAttr "div" ("class" =: "qr-block") $ do
     elAttr "a"
       ( "class" =: "rsvp-btn registry-link-btn"
      <> "href" =: url
-     <> "target" =: "_blank"
-     <> "rel" =: "noopener noreferrer"
+     <> targetAttrs
       ) $ text label
     elAttr "a"
       ( "href" =: url
-     <> "target" =: "_blank"
-     <> "rel" =: "noopener noreferrer"
+     <> targetAttrs
      <> "aria-label" =: label
       ) $
       elAttr "img"
@@ -520,6 +575,10 @@ qrBlock url image label =
        <> "alt" =: "QR"
        <> "loading" =: "lazy"
         ) blank
+  where
+    targetAttrs
+      | newTab    = "target" =: "_blank" <> "rel" =: "noopener noreferrer"
+      | otherwise = mempty
 
 -- ── VIDEO PARA LOS NOVIOS ─────────────────────────────────────────────────────
 
@@ -545,6 +604,27 @@ videoMsgSection =
            <> "id"    =: "video-upload-open"
             ) $ text "Subir video"
           return (domEvent Click btnEl)
+
+-- ── FOTOS DE LA BODA ─────────────────────────────────────────────────────────
+-- Invitation to share photos. The QR (printed on the tables too) and the
+-- button both open /fotos; the live gallery band follows this section.
+
+fotosSection :: DomBuilder t m => m ()
+fotosSection =
+  secImage "fotos" $ do
+    elAttr "img"
+      ( "class"   =: "section-img"
+     <> "src"     =: "images/1.png"
+     <> "alt"     =: ""
+     <> "loading" =: "lazy"
+      ) blank
+    elAttr "div" ("class" =: "section-overlay") $ do
+      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
+        text "FOTOS DE LA BODA"
+      elAttr "div" ("class" =: "glass rect fotos-invite-card" <> "data-reveal" =: "") $ do
+        elAttr "p" ("class" =: "mesa-label") $ text "EN CALIDAD ORIGINAL"
+        elAttr "p" ("class" =: "fotos-invite-copy") $ text "Aparecer\225n aqu\237 abajo, en vivo."
+        qrBlock False "/fotos" "qr-fotos.png" "Subir fotos y videos"
 
 -- ── Video upload popup ───────────────────────────────────────────────────────
 
@@ -798,6 +878,7 @@ siteCSS = T.unlines
   , "#rsvp         { background: radial-gradient(ellipse at 50% 30%, #3a2614 0%, #1c1410 70%); }"
   , "#mesa-regalos { background-color: #382e24; }"
   , "#video-mensaje { background: linear-gradient(180deg, #2c2418 0%, #1a120a 100%); }"
+  , "#fotos        { background-color: #2f241b; }"
   , ""
   , ".spacer { flex: 1; }"
   , ""
@@ -963,6 +1044,31 @@ siteCSS = T.unlines
   , ".fixed-nav-link.is-active {"
   , "  color: #d4b483;"
   , "  border-bottom-color: #d4b483;"
+  , "}"
+  , ".fixed-nav-link:focus-visible { outline: 1px solid rgba(212,180,131,.8); outline-offset: 4px; }"
+  -- The track is layout-transparent on wide screens. On phones it becomes one
+  -- swipeable row instead of wrapping; its edges fade out and
+  -- navHighlightingJS keeps the active link centred.
+  , ".fixed-nav-track { display: contents; }"
+  , "@media (max-width: 760px) {"
+  , "  .fixed-nav { padding-left: 0; padding-right: 0; }"
+  , "  .fixed-nav-track {"
+  , "    display: flex;"
+  , "    flex: 1 1 auto;"
+  , "    min-width: 0;"
+  , "    flex-wrap: nowrap;"
+  , "    justify-content: flex-start;"
+  , "    justify-content: safe center;"
+  , "    gap: inherit;"
+  , "    padding: 0 clamp(1.2rem, 3.8vw, 3.3rem);"
+  , "    overflow-x: auto;"
+  , "    overscroll-behavior-x: contain;"
+  , "    scrollbar-width: none;"
+  , "    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 1.1rem, #000 calc(100% - 1.1rem), transparent 100%);"
+  , "    mask-image: linear-gradient(90deg, transparent 0, #000 1.1rem, #000 calc(100% - 1.1rem), transparent 100%);"
+  , "  }"
+  , "  .fixed-nav-track::-webkit-scrollbar { display: none; }"
+  , "  .fixed-nav-link { flex: 0 0 auto; }"
   , "}"
   , ""
 
@@ -1296,6 +1402,157 @@ siteCSS = T.unlines
   , ".qr-img { width: min(132px, 42vw); height: auto; padding: .45rem; border-radius: 12px; background: rgba(255,255,255,.92); box-shadow: 0 10px 32px rgba(0,0,0,.28); }"
   , ""
 
+  -- ── Itinerario — paper card on a candle-lit table ─────────────────────────
+  -- overflow: clip (not auto/hidden) so the section is not a scroll container
+  -- and the card's view() timeline follows the page scroll.
+  , "#itinerario {"
+  , "  --itin-nav: clamp(2.9rem, calc(6.8vw + .4rem), 6.4rem);"
+  , "  overflow: clip;"
+  , "}"
+  -- Wide screens: also clear the floating back-to-top button.
+  , "@media (min-width: 761px) {"
+  , "  #itinerario { --itin-nav: calc(clamp(2.9rem, calc(6.8vw + .4rem), 6.4rem) + 3.6rem); }"
+  , "}"
+  , "#itinerario {"
+  , "  background:"
+  , "    radial-gradient(ellipse 52% 40% at 50% 46%, rgba(212,180,131,.17) 0%, rgba(212,180,131,.06) 48%, transparent 74%),"
+  , "    radial-gradient(ellipse 34% 26% at 50% 40%, rgba(255,214,150,.08) 0%, transparent 70%),"
+  , "    radial-gradient(ellipse 120% 95% at 50% 50%, transparent 42%, rgba(8,5,2,.62) 100%),"
+  , "    #1c1410;"
+  , "}"
+  , "#itinerario::after {"
+  , "  content: '';"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  z-index: 0;"
+  , "  pointer-events: none;"
+  , "  opacity: .07;"
+  , "  background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 .93 0 0 0 0 .82 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\");"
+  , "}"
+  , ".itinerario-stage {"
+  , "  position: relative;"
+  , "  z-index: 1;"
+  , "  width: min(100vw, var(--photo-frame-width));"
+  , "  height: 100%;"
+  , "  display: flex;"
+  , "  flex-direction: column;"
+  , "  align-items: center;"
+  , "  justify-content: center;"
+  , "  gap: clamp(.6rem, 1.6svh, 1.2rem);"
+  , "  padding-bottom: var(--itin-nav);"
+  , "}"
+  , ".itinerario-stage .label { padding-top: 0; }"
+  , ".itinerario-link {"
+  , "  display: flex;"
+  , "  flex-direction: column;"
+  , "  align-items: center;"
+  , "  gap: clamp(1.1rem, 2.6svh, 1.7rem);"
+  , "  color: inherit;"
+  , "  text-decoration: none;"
+  , "  outline: none;"
+  , "  -webkit-tap-highlight-color: transparent;"
+  , "  view-timeline: --itin block;"
+  , "}"
+  , ".itinerario-settle { display: block; }"
+  , ".itinerario-card {"
+  , "  position: relative;"
+  , "  display: block;"
+  , "  width: min(calc(min(100vw, var(--photo-frame-width)) * .84), calc((max(600px, 100svh) - var(--itin-nav) - 9rem) * .7279));"
+  , "  aspect-ratio: 1070 / 1470;"
+  , "  border-radius: 3px;"
+  , "  background: #f2eee3;"
+  , "  box-shadow:"
+  , "    0 1px 1px rgba(10,6,2,.35),"
+  , "    0 6px 14px rgba(10,6,2,.30),"
+  , "    0 24px 48px rgba(10,6,2,.38),"
+  , "    0 0 90px rgba(212,180,131,.10);"
+  , "  outline: 1px solid rgba(212,180,131,.30);"
+  , "  outline-offset: 10px;"
+  , "  transform: rotate(-.6deg);"
+  , "  transition: transform .9s cubic-bezier(.19,1,.22,1);"
+  , "}"
+  -- Deeper lift shadow, faded in on hover (opacity only).
+  , ".itinerario-card::before {"
+  , "  content: '';"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  z-index: -1;"
+  , "  border-radius: inherit;"
+  , "  box-shadow: 0 18px 30px rgba(10,6,2,.32), 0 46px 90px rgba(10,6,2,.45);"
+  , "  opacity: 0;"
+  , "  transition: opacity .6s cubic-bezier(.19,1,.22,1);"
+  , "}"
+  , ".itinerario-img {"
+  , "  display: block;"
+  , "  width: 100%;"
+  , "  height: 100%;"
+  , "  border-radius: inherit;"
+  , "  user-select: none;"
+  , "}"
+  , ".itinerario-sheen {"
+  , "  position: absolute;"
+  , "  inset: 0;"
+  , "  overflow: hidden;"
+  , "  border-radius: inherit;"
+  , "  pointer-events: none;"
+  , "}"
+  , ".itinerario-sheen::after {"
+  , "  content: '';"
+  , "  position: absolute;"
+  , "  inset: -10% -40%;"
+  , "  background: linear-gradient(112deg, transparent 38%, rgba(255,249,232,.55) 50%, transparent 62%);"
+  , "  mix-blend-mode: soft-light;"
+  , "  opacity: 0;"
+  , "  transform: translateX(-70%);"
+  , "}"
+  , ".itinerario-hint {"
+  , "  display: inline-flex;"
+  , "  align-items: center;"
+  , "  gap: .85rem;"
+  , "  font-size: clamp(.62rem, .7vw, .78rem);"
+  , "  letter-spacing: .3em;"
+  , "  color: rgba(240,235,224,.58);"
+  , "  transition: color .3s;"
+  , "}"
+  , ".itinerario-hint::before, .itinerario-hint::after {"
+  , "  content: '';"
+  , "  width: 1.6rem;"
+  , "  height: 1px;"
+  , "  background: rgba(212,180,131,.45);"
+  , "}"
+  , "@media (hover: hover) {"
+  , "  .itinerario-link:hover .itinerario-card { transform: rotate(0deg) translateY(-5px); }"
+  , "  .itinerario-link:hover .itinerario-card::before { opacity: 1; }"
+  , "  .itinerario-link:hover .itinerario-hint { color: #d4b483; }"
+  , "}"
+  , ".itinerario-link:focus-visible .itinerario-card { outline: 2px solid #d4b483; outline-offset: 10px; transform: rotate(0deg); }"
+  , ".itinerario-link:focus-visible .itinerario-hint { color: #d4b483; }"
+  , ".itinerario-link:active .itinerario-card { transform: rotate(0deg) translateY(-1px) scale(.99); transition-duration: .15s; }"
+  , "@supports (animation-timeline: view()) {"
+  , "  .itinerario-settle {"
+  , "    animation: itinSettle linear both;"
+  , "    animation-timing-function: cubic-bezier(.19,1,.22,1);"
+  , "    animation-timeline: --itin;"
+  , "    animation-range: entry 0% cover 45%;"
+  , "  }"
+  , "  .itinerario-sheen::after {"
+  , "    animation: itinSheen linear both;"
+  , "    animation-timeline: --itin;"
+  , "    animation-range: cover 28% cover 62%;"
+  , "  }"
+  , "}"
+  , "@keyframes itinSettle {"
+  , "  from { opacity: 0; transform: translateY(9%) rotate(-3.2deg) scale(.93); }"
+  , "  to   { opacity: 1; transform: none; }"
+  , "}"
+  , "@keyframes itinSheen {"
+  , "  0%   { opacity: 0; transform: translateX(-70%); }"
+  , "  25%  { opacity: 1; }"
+  , "  75%  { opacity: 1; }"
+  , "  100% { opacity: 0; transform: translateX(70%); }"
+  , "}"
+  , ""
+
   -- ── Video mensaje ─────────────────────────────────────────────────────────
   , ".video-mask { overflow: hidden; }"
   , "#video-mensaje .section-overlay { padding-bottom: calc(var(--card-bottom-gap) * 1.1); }"
@@ -1403,5 +1660,8 @@ siteCSS = T.unlines
   , "  .marquee-track { animation: none; }"
   , "  [data-reveal] { animation: none !important; opacity: 1; transform: none; }"
   , "  .fixed-nav { opacity: 1; transform: none; }"
+  , "  .itinerario-settle { animation: none !important; opacity: 1; transform: none; }"
+  , "  .itinerario-sheen::after { animation: none !important; opacity: 0; }"
+  , "  .itinerario-card, .itinerario-card::before { transition: none; }"
   , "}"
   ]

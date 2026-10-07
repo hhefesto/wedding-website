@@ -9,6 +9,7 @@ library
       Api
       Auth
       Db
+      Media
       Upload
   hs-source-dirs:     src
   build-depends:
@@ -16,6 +17,7 @@ library
     , aeson
     , bcrypt
     , bytestring
+    , containers
     , directory
     , filepath
     , postgresql-simple
@@ -23,11 +25,13 @@ library
     , servant
     , servant-multipart
     , servant-server
+    , stm
     , temporary
     , text
     , time
     , uuid
     , wai
+    , wai-app-static
     , warp
     , wedding-shared
   default-language:   Haskell2010

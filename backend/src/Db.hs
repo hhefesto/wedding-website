@@ -30,6 +30,18 @@ module Db
   , createIpAssociation
   , updateIpAssociation
   , deleteIpAssociation
+  , MediaUploadRow (..)
+  , insertMediaUpload
+  , getMediaUpload
+  , markMediaProcessing
+  , markMediaReady
+  , markMediaFailed
+  , listProcessingMedia
+  , listPublicMedia
+  , listAdminMedia
+  , setMediaHidden
+  , deleteMedia
+  , purgeStaleMediaUploads
   ) where
 
 import           Control.Applicative        ((<|>))
@@ -48,7 +60,7 @@ import           Wedding.Types              (AttendanceStatus (..), InviteLookup
                                                Invitee (..), InviteeInput (..),
                                                IpAssociationAdmin (..), IpAssociationInput (..),
                                                LinkInviteeBody (..), RsvpAdmin (..),
-                                               RsvpRequest (..), VideoAdmin (..))
+                                               MediaKind (..), RsvpRequest (..), VideoAdmin (..))
 
 data SubmittedRsvp = SubmittedRsvp
   { submittedInvitee :: Maybe Invitee
@@ -534,3 +546,106 @@ statusToText Declined  = "declined"
 statusFromText :: Text -> AttendanceStatus
 statusFromText "declined" = Declined
 statusFromText _          = Attending
+
+-- ── Guest photos & videos ────────────────────────────────────────────────────
+
+data MediaUploadRow = MediaUploadRow
+  { murKind     :: MediaKind
+  , murStored   :: Text
+  , murSize     :: Int64
+  , murStatus   :: Text
+  }
+
+insertMediaUpload
+  :: Connection -> Text -> MediaKind -> Text -> Text -> Text -> Int64 -> Maybe Text -> Maybe Text -> IO ()
+insertMediaUpload conn mid kind original stored contentType size uploader mIp =
+  void $ execute conn
+    "INSERT INTO guest_media (id, kind, original_filename, stored_filename, content_type, size_bytes, uploader_name, ip_address) VALUES (?::uuid, ?, ?, ?, ?, ?, ?, ?::inet)"
+    (mid, kindToText kind, original, stored, contentType, size, uploader, mIp)
+
+getMediaUpload :: Connection -> Text -> IO (Maybe MediaUploadRow)
+getMediaUpload conn mid = do
+  rows <- query conn
+    "SELECT kind, stored_filename, size_bytes, status FROM guest_media WHERE id = ?::uuid"
+    (Only mid)
+  pure $ case rows of
+    []                              -> Nothing
+    ((kind, stored, size, status):_) -> Just (MediaUploadRow (kindFromText kind) stored size status)
+
+-- | True when this call moved the upload out of 'uploading' (so exactly one
+-- caller enqueues it).
+markMediaProcessing :: Connection -> Text -> IO Bool
+markMediaProcessing conn mid = do
+  n <- execute conn
+    "UPDATE guest_media SET status = 'processing' WHERE id = ?::uuid AND status = 'uploading'"
+    (Only mid)
+  pure (n > 0)
+
+markMediaReady :: Connection -> Text -> Maybe Int -> Maybe Int -> Maybe Int64 -> IO ()
+markMediaReady conn mid width height durationMs =
+  void $ execute conn
+    "UPDATE guest_media SET status = 'ready', ready_at = NOW(), width = ?, height = ?, duration_ms = ? WHERE id = ?::uuid"
+    (width, height, durationMs, mid)
+
+markMediaFailed :: Connection -> Text -> IO ()
+markMediaFailed conn mid =
+  void $ execute conn "UPDATE guest_media SET status = 'failed' WHERE id = ?::uuid" (Only mid)
+
+-- | Uploads that finished arriving but were not processed (e.g. the backend
+-- restarted mid-transcode).
+listProcessingMedia :: Connection -> IO [(Text, MediaKind)]
+listProcessingMedia conn = do
+  rows <- query_ conn
+    "SELECT id::text, kind FROM guest_media WHERE status = 'processing' ORDER BY created_at"
+  pure [ (mid, kindFromText kind) | (mid, kind) <- rows ]
+
+-- | Published gallery items, newest first:
+-- (id, kind, width, height, duration ms, uploader, ready-at epoch ms).
+listPublicMedia :: Connection -> IO [(Text, MediaKind, Maybe Int, Maybe Int, Maybe Int64, Maybe Text, Int64)]
+listPublicMedia conn = do
+  rows <- query_ conn
+    ("SELECT id::text, kind, width, height, duration_ms, uploader_name, " <>
+     "(EXTRACT(EPOCH FROM ready_at) * 1000)::bigint " <>
+     "FROM guest_media WHERE status = 'ready' AND NOT hidden ORDER BY ready_at DESC LIMIT 500")
+  pure [ (mid, kindFromText kind, w, h, d, u, t) | (mid, kind, w, h, d, u, t) <- rows ]
+
+-- | Admin view: (id, kind, original name, content type, size, status, hidden,
+-- uploader, ip, created at).
+listAdminMedia
+  :: Connection
+  -> IO [(Text, MediaKind, Text, Text, Int64, Text, Bool, Maybe Text, Maybe Text, Text)]
+listAdminMedia conn = do
+  rows <- query_ conn
+    ("SELECT id::text, kind, original_filename, content_type, size_bytes, status, hidden, " <>
+     "uploader_name, ip_address::text, created_at::text FROM guest_media ORDER BY created_at DESC")
+  pure [ (mid, kindFromText kind, o, c, s, st, h, u, ip, cr)
+       | (mid, kind, o, c, s) :. (st, h, u, ip, cr) <- rows ]
+
+setMediaHidden :: Connection -> Text -> Bool -> IO Bool
+setMediaHidden conn mid hidden = do
+  n <- execute conn "UPDATE guest_media SET hidden = ? WHERE id = ?::uuid" (hidden, mid)
+  pure (n > 0)
+
+-- | Delete the row, returning the stored original filename so the caller can
+-- remove the files.
+deleteMedia :: Connection -> Text -> IO (Maybe Text)
+deleteMedia conn mid = do
+  rows <- query conn "DELETE FROM guest_media WHERE id = ?::uuid RETURNING stored_filename" (Only mid)
+  pure $ case rows of
+    []             -> Nothing
+    (Only name:_) -> Just name
+
+-- | Drop uploads abandoned for over a day; returns their ids.
+purgeStaleMediaUploads :: Connection -> IO [Text]
+purgeStaleMediaUploads conn = do
+  rows <- query_ conn
+    "DELETE FROM guest_media WHERE status = 'uploading' AND created_at < NOW() - INTERVAL '24 hours' RETURNING id::text"
+  pure (map fromOnly rows)
+
+kindToText :: MediaKind -> Text
+kindToText MediaPhoto = "photo"
+kindToText MediaVideo = "video"
+
+kindFromText :: Text -> MediaKind
+kindFromText "video" = MediaVideo
+kindFromText _       = MediaPhoto

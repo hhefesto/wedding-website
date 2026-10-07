@@ -111,10 +111,18 @@
           # Our HTML shell overwrites any index.html from the jsexe bundle
           install -m644 ${./index.html} "$out/index.html"
 
+          # Cache-bust the GHCJS bundle: Cloudflare caches *.js for hours, so
+          # version the script URLs by content (paths stay relative).
+          v=$(cat "$out/rts.js" "$out/lib.js" "$out/out.js" "$out/runmain.js" | sha256sum | cut -c1-12)
+          sed -i -E "s/src=\"(rts|lib|out|runmain)\.js\"/src=\"\1.js?v=$v\"/g" "$out/index.html"
+
           qrencode -t PNG -s 6 -m 2 -o "$out/qr-registry.png" \
             "https://mesaderegalos.liverpool.com.mx/milistaderegalos/51981423"
           qrencode -t PNG -s 6 -m 2 -o "$out/qr-location.png" \
             "https://www.google.com/maps/search/?api=1&query=20.5229282,-100.4039031"
+          # Guest photo uploads; the SVG is for printing table cards.
+          qrencode -t PNG -s 6 -m 2 -o "$out/qr-fotos.png" "https://xty-y-dan.net/fotos"
+          qrencode -t SVG -m 2 -o "$out/qr-fotos.svg" "https://xty-y-dan.net/fotos"
         '';
 
         adminWebsite = pkgs.runCommand "wedding-admin-website" {
@@ -190,7 +198,10 @@
           test -f ${self'.packages.admin-website}/index.html  || (echo "MISSING admin index.html"; exit 1)
           test -f ${self'.packages.admin-website}/out.js      || (echo "MISSING admin out.js"; exit 1)
           test -d ${self'.packages.website}/images      || (echo "MISSING images/"; exit 1)
-          for img in 1.png 2.png 3.png 4.png 5.png; do
+          test -f ${self'.packages.website}/qr-fotos.png || (echo "MISSING qr-fotos.png"; exit 1)
+          grep -q 'out.js?v=' ${self'.packages.website}/index.html \
+            || (echo "index.html scripts are not cache-busted"; exit 1)
+          for img in 1.png 2.png 3.png 4.png 5.png itinerario.jpeg; do
             test -f ${self'.packages.website}/images/$img \
               || (echo "MISSING images/$img"; exit 1)
           done
@@ -248,6 +259,19 @@
                        c.services.postgresql.authentication; }
               { name = "dev cookie not secure";
                 ok = c.systemd.services.wedding-backend.environment.WEDDING_COOKIE_SECURE == "false"; }
+              { name = "fotos trailing-slash redirect";
+                ok = vhost.locations."= /fotos/".return == "301 /fotos"; }
+              { name = "media upload rate limit";
+                ok = lib.hasInfix "limit_req zone=wedding_media"
+                       vhost.locations."= /api/media/uploads".extraConfig; }
+              { name = "media upload proxied";
+                ok = vhost.locations."= /api/media/uploads".proxyPass == "http://127.0.0.1:3001"; }
+              { name = "media dir env";
+                ok = c.systemd.services.wedding-backend.environment.WEDDING_MEDIA_DIR == "/var/lib/wedding/media"; }
+              { name = "media state directory";
+                ok = lib.elem "wedding/media" c.systemd.services.wedding-backend.serviceConfig.StateDirectory; }
+              { name = "video cap under Cloudflare limit";
+                ok = lib.toInt c.systemd.services.wedding-backend.environment.WEDDING_VIDEO_MAX_BYTES < 100 * 1000 * 1000; }
             ];
             failed = builtins.filter (x: !x.ok) checkList;
           in

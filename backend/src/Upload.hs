@@ -3,6 +3,9 @@
 module Upload
   ( SavedVideo (..)
   , saveVideoUpload
+  , safeOriginalName
+  , safeExtension
+  , isVideoUpload
   ) where
 
 import           Control.Monad       (when)

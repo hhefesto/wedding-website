@@ -11,18 +11,24 @@ module Api
 import           Control.Applicative        ((<|>))
 import           Control.Concurrent.MVar    (MVar, withMVar)
 import           Control.Exception          (SomeException, try)
+import           Control.Monad              (when)
 import           Control.Monad.IO.Class     (liftIO)
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as LBC8
-import           Data.Char                  (isAlphaNum, ord)
+import           Data.Char                  (isAlphaNum, isHexDigit, ord)
 import           Data.Int                   (Int64)
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as TE
+import qualified Data.UUID                  as UUID
 import           Database.PostgreSQL.Simple (Connection)
 import           Network.Wai                (Application)
+import           Network.Wai.Application.Static (defaultWebAppSettings)
 import           Servant
 import           Servant.Multipart          (MultipartData, MultipartForm, Tmp)
+import           Servant.Server.StaticFiles (serveDirectoryWith)
+import           WaiAppStatic.Types         (StaticSettings (..))
 import           System.Directory           (doesFileExist, removeFile)
 import           System.Exit                (ExitCode (..))
 import           System.FilePath            ((</>))
@@ -32,13 +38,23 @@ import           System.Process             (readProcessWithExitCode)
 
 import           Auth                       (generateToken, verifyPassword)
 import qualified Db
-import           Upload                     (SavedVideo (..), saveVideoUpload)
+import           Media                      (ChunkOutcome (..), MediaConfig (..), MediaRuntime,
+                                             adminThumbUrl, appendChunk, beginUpload,
+                                             classifyUpload, enqueueMedia, freeBytes,
+                                             mediaChunkSize, mediaItem, originalExists,
+                                             publicDir, receivedBytes, removeMediaFiles,
+                                             storedNameFor)
+import           Upload                     (SavedVideo (..), safeOriginalName, saveVideoUpload)
 import           Wedding.Types              (InviteLookup, Invitee (..), InviteeInput (..),
                                              IpAssociationAdmin, IpAssociationInput,
                                              LinkInviteeBody, LoginRequest (..),
                                               RsvpLoginRequest (..),
                                              ResolveDuplicateBody (..),
                                               RsvpAdmin, RsvpRequest (..),
+                                             MediaAdmin (..), MediaHiddenBody (..),
+                                             MediaItem, MediaUploadInit (..),
+                                             MediaUploadProgress (..),
+                                             MediaUploadStarted (..),
                                              VideoAdmin (..),
                                              VideoSubmittedResponse (..))
 
@@ -49,6 +65,8 @@ data AppConfig = AppConfig
   , appCookieSecure      :: Bool
   , appQrencodeBin       :: FilePath
   , appPublicBaseUrl     :: Text
+  , appMedia             :: MediaConfig
+  , appMediaRuntime      :: MediaRuntime
   }
 
 type ConnVar = MVar Connection
@@ -57,6 +75,7 @@ type ForwardedForHeader = Header "X-Forwarded-For" Text
 type RealIpHeader = Header "X-Real-IP" Text
 type SetCookie a = Headers '[Header "Set-Cookie" Text] a
 type DownloadFile = Headers '[Header "Content-Disposition" Text] BL.ByteString
+type NoStore a = Headers '[Header "Cache-Control" Text] a
 
 type API =
        "api" :> "health" :> Get '[PlainText] String
@@ -85,6 +104,14 @@ type API =
   :<|> "api" :> "admin" :> "ip-associations" :> CookieHeader :> ReqBody '[JSON] IpAssociationInput :> Post '[JSON] IpAssociationAdmin
   :<|> "api" :> "admin" :> "ip-associations" :> Capture "id" Int64 :> CookieHeader :> ReqBody '[JSON] IpAssociationInput :> Put '[JSON] IpAssociationAdmin
   :<|> "api" :> "admin" :> "ip-associations" :> Capture "id" Int64 :> CookieHeader :> Delete '[JSON] NoContent
+  :<|> "api" :> "media" :> Get '[JSON] (NoStore [MediaItem])
+  :<|> "api" :> "media" :> "uploads" :> RealIpHeader :> ReqBody '[JSON] MediaUploadInit :> Post '[JSON] MediaUploadStarted
+  :<|> "api" :> "media" :> "uploads" :> Capture "id" Text :> Get '[JSON] (NoStore MediaUploadProgress)
+  :<|> "api" :> "media" :> "uploads" :> Capture "id" Text :> QueryParam "offset" Int64 :> ReqBody '[OctetStream] BL.ByteString :> Put '[JSON] MediaUploadProgress
+  :<|> "api" :> "media" :> "files" :> Raw
+  :<|> "api" :> "admin" :> "media" :> CookieHeader :> Get '[JSON] [MediaAdmin]
+  :<|> "api" :> "admin" :> "media" :> Capture "id" Text :> "hidden" :> CookieHeader :> ReqBody '[JSON] MediaHiddenBody :> Put '[JSON] NoContent
+  :<|> "api" :> "admin" :> "media" :> Capture "id" Text :> CookieHeader :> Delete '[JSON] NoContent
 
 api :: Proxy API
 api = Proxy
@@ -117,6 +144,14 @@ server cfg var =
   :<|> createIpAssociationH var
   :<|> updateIpAssociationH var
   :<|> deleteIpAssociationH var
+  :<|> mediaListH var
+  :<|> mediaInitH cfg var
+  :<|> mediaStatusH cfg var
+  :<|> mediaChunkH cfg var
+  :<|> mediaFiles cfg
+  :<|> adminMediaListH var
+  :<|> adminMediaHiddenH var
+  :<|> adminMediaDeleteH cfg var
 
 healthH :: Handler String
 healthH = pure "ok"
@@ -294,6 +329,129 @@ deleteIpAssociationH var aid mCookie = do
   requireAdmin var mCookie
   ok <- withDb var (`Db.deleteIpAssociation` aid)
   if ok then pure NoContent else throwError err404
+
+-- ── Guest photos & videos ────────────────────────────────────────────────────
+
+mediaListH :: ConnVar -> Handler (NoStore [MediaItem])
+mediaListH var = do
+  rows <- withDb var Db.listPublicMedia
+  pure (addHeader "no-store" (map mediaItem rows))
+
+mediaInitH :: AppConfig -> ConnVar -> Maybe Text -> MediaUploadInit -> Handler MediaUploadStarted
+mediaInitH cfg var realIp req = do
+  let mcfg = appMedia cfg
+      original = safeOriginalName (muiFilename req)
+      size = muiSize req
+  kind <- maybe (badRequest "Solo se pueden subir fotos y videos.") pure
+    (classifyUpload (muiContentType req) original)
+  when (size <= 0 || toInteger size > mediaMaxBytes mcfg) $
+    badRequest "El archivo est\225 vac\237o o es demasiado grande."
+  mFree <- liftIO (freeBytes mcfg)
+  case mFree of
+    Just free | free - toInteger size < mediaMinFreeBytes mcfg ->
+      throwError err503 { errBody = utf8Body "Ya no hay espacio para m\225s archivos. Av\237sale a los novios." }
+    _ -> pure ()
+  mid <- liftIO generateToken
+  let stored = storedNameFor mid original
+      uploader = T.take 80 <$> (nonEmpty =<< muiUploaderName req)
+      contentType = T.take 120 (muiContentType req)
+      mIp = realIp >>= nonEmpty >>= plausibleIp
+  liftIO (beginUpload mcfg mid)
+  withDb var (\conn -> Db.insertMediaUpload conn mid kind original stored contentType size uploader mIp)
+  pure (MediaUploadStarted mid mediaChunkSize)
+
+mediaStatusH :: AppConfig -> ConnVar -> Text -> Handler (NoStore MediaUploadProgress)
+mediaStatusH cfg var rawId = do
+  mid <- parseMediaId rawId
+  row <- withDb var (`Db.getMediaUpload` mid) >>= maybe (throwError err404) pure
+  if Db.murStatus row /= "uploading"
+    then pure (addHeader "no-store" (MediaUploadProgress (Db.murSize row) True))
+    else do
+      mHeld <- liftIO (receivedBytes (appMedia cfg) mid)
+      case mHeld of
+        Just held -> pure (addHeader "no-store" (MediaUploadProgress held False))
+        Nothing   -> addHeader "no-store" <$> recoverFinished cfg var mid row
+
+mediaChunkH :: AppConfig -> ConnVar -> Text -> Maybe Int64 -> BL.ByteString -> Handler MediaUploadProgress
+mediaChunkH cfg var rawId mOffset body = do
+  mid <- parseMediaId rawId
+  offset <- maybe (badRequest "Falta el offset.") pure mOffset
+  row <- withDb var (`Db.getMediaUpload` mid) >>= maybe (throwError err404) pure
+  if Db.murStatus row /= "uploading"
+    then pure (MediaUploadProgress (Db.murSize row) True)
+    else do
+      when (BL.length body > 2 * mediaChunkSize) $ throwError err413
+      outcome <- liftIO $
+        appendChunk (appMedia cfg) (appMediaRuntime cfg) mid (Db.murStored row) (Db.murSize row) offset body
+      case outcome of
+        ChunkStored held -> pure (MediaUploadProgress held False)
+        ChunkFinished    -> finishUpload cfg var mid row
+        ChunkBusy        -> throwError err409 { errBody = utf8Body "Subida en curso, reintenta." }
+        ChunkTooLarge    -> badRequest "El archivo es m\225s grande de lo declarado."
+        ChunkMissing     -> recoverFinished cfg var mid row
+
+-- | The part file is gone: either another request just finished the upload
+-- (the original is in place) or it expired.
+recoverFinished :: AppConfig -> ConnVar -> Text -> Db.MediaUploadRow -> Handler MediaUploadProgress
+recoverFinished cfg var mid row = do
+  done <- liftIO (originalExists (appMedia cfg) (Db.murStored row))
+  if done then finishUpload cfg var mid row else throwError err410
+
+finishUpload :: AppConfig -> ConnVar -> Text -> Db.MediaUploadRow -> Handler MediaUploadProgress
+finishUpload cfg var mid row = do
+  moved <- withDb var (`Db.markMediaProcessing` mid)
+  when moved $ liftIO (enqueueMedia (appMediaRuntime cfg) mid (Db.murKind row))
+  pure (MediaUploadProgress (Db.murSize row) True)
+
+-- | Public derivatives. Hashing is off: the default MD5s the whole file on
+-- every request, which is ruinous for video Range requests. Names are
+-- unguessable UUIDs, so the default max-age=forever caching is safe.
+mediaFiles :: AppConfig -> Server Raw
+mediaFiles cfg =
+  serveDirectoryWith (defaultWebAppSettings (publicDir (appMedia cfg))) { ssUseHash = False }
+
+adminMediaListH :: ConnVar -> Maybe Text -> Handler [MediaAdmin]
+adminMediaListH var mCookie = do
+  requireAdmin var mCookie
+  rows <- withDb var Db.listAdminMedia
+  pure [ MediaAdmin mid kind original ctype size status hidden uploader ip (adminThumbUrl mid status) created
+       | (mid, kind, original, ctype, size, status, hidden, uploader, ip, created) <- rows ]
+
+adminMediaHiddenH :: ConnVar -> Text -> Maybe Text -> MediaHiddenBody -> Handler NoContent
+adminMediaHiddenH var rawId mCookie body = do
+  requireAdmin var mCookie
+  mid <- parseMediaId rawId
+  ok <- withDb var (\conn -> Db.setMediaHidden conn mid (mediaHidden body))
+  if ok then pure NoContent else throwError err404
+
+adminMediaDeleteH :: AppConfig -> ConnVar -> Text -> Maybe Text -> Handler NoContent
+adminMediaDeleteH cfg var rawId mCookie = do
+  requireAdmin var mCookie
+  mid <- parseMediaId rawId
+  mStored <- withDb var (`Db.deleteMedia` mid)
+  case mStored of
+    Nothing     -> throwError err404
+    Just stored -> do
+      liftIO (removeMediaFiles (appMedia cfg) mid stored)
+      pure NoContent
+
+-- | Canonical UUID text; also guarantees the id is safe inside file paths.
+parseMediaId :: Text -> Handler Text
+parseMediaId raw = maybe (throwError err404) (pure . UUID.toText) (UUID.fromText raw)
+
+-- | X-Real-IP is set by nginx from the (Cloudflare-restored) peer address;
+-- still validate it so a malformed value can never break the INET cast.
+plausibleIp :: Text -> Maybe Text
+plausibleIp ip
+  | T.length ip <= 45 && T.any (`elem` (".:" :: String)) ip
+      && T.all (\c -> isHexDigit c || c `elem` (".:" :: String)) ip = Just ip
+  | otherwise = Nothing
+
+badRequest :: Text -> Handler a
+badRequest msg = throwError err400 { errBody = utf8Body msg }
+
+utf8Body :: Text -> BL.ByteString
+utf8Body = BL.fromStrict . TE.encodeUtf8
 
 withDb :: ConnVar -> (Connection -> IO a) -> Handler a
 withDb var action = do

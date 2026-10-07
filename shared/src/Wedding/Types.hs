@@ -14,6 +14,13 @@ module Wedding.Types
   , LinkInviteeBody (..)
   , ResolveDuplicateBody (..)
   , VideoSubmittedResponse (..)
+  , MediaKind (..)
+  , MediaUploadInit (..)
+  , MediaUploadStarted (..)
+  , MediaUploadProgress (..)
+  , MediaItem (..)
+  , MediaAdmin (..)
+  , MediaHiddenBody (..)
   ) where
 
 import           Data.Aeson   (FromJSON (..), ToJSON (..), object, withObject,
@@ -371,3 +378,165 @@ instance ToJSON VideoSubmittedResponse where
 
 instance FromJSON VideoSubmittedResponse where
   parseJSON = withObject "VideoSubmittedResponse" $ \o -> VideoSubmittedResponse <$> o .: "id"
+
+-- ── Guest photos & videos (live gallery) ─────────────────────────────────────
+
+data MediaKind = MediaPhoto | MediaVideo
+  deriving (Eq, Ord, Show, Generic)
+
+instance ToJSON MediaKind where
+  toJSON MediaPhoto = "photo"
+  toJSON MediaVideo = "video"
+
+instance FromJSON MediaKind where
+  parseJSON = withText "MediaKind" $ \value ->
+    case value of
+      "photo" -> pure MediaPhoto
+      "video" -> pure MediaVideo
+      _       -> fail "MediaKind must be photo or video"
+
+-- | Start a chunked upload: the client declares the file up front.
+data MediaUploadInit = MediaUploadInit
+  { muiFilename     :: Text
+  , muiContentType  :: Text
+  , muiSize         :: Int64
+  , muiUploaderName :: Maybe Text
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON MediaUploadInit where
+  toJSON m = object
+    [ "filename"     .= muiFilename m
+    , "contentType"  .= muiContentType m
+    , "size"         .= muiSize m
+    , "uploaderName" .= muiUploaderName m
+    ]
+
+instance FromJSON MediaUploadInit where
+  parseJSON = withObject "MediaUploadInit" $ \o ->
+    MediaUploadInit
+      <$> o .:  "filename"
+      <*> o .:? "contentType" .!= ""
+      <*> o .:  "size"
+      <*> o .:? "uploaderName"
+
+data MediaUploadStarted = MediaUploadStarted
+  { musId        :: Text
+  , musChunkSize :: Int64
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON MediaUploadStarted where
+  toJSON m = object ["id" .= musId m, "chunkSize" .= musChunkSize m]
+
+instance FromJSON MediaUploadStarted where
+  parseJSON = withObject "MediaUploadStarted" $ \o ->
+    MediaUploadStarted <$> o .: "id" <*> o .: "chunkSize"
+
+-- | Bytes the server holds for an upload; the client always resumes from
+-- 'mupReceived'.
+data MediaUploadProgress = MediaUploadProgress
+  { mupReceived :: Int64
+  , mupComplete :: Bool
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON MediaUploadProgress where
+  toJSON m = object ["received" .= mupReceived m, "complete" .= mupComplete m]
+
+instance FromJSON MediaUploadProgress where
+  parseJSON = withObject "MediaUploadProgress" $ \o ->
+    MediaUploadProgress <$> o .: "received" <*> o .: "complete"
+
+-- | One published item in the public gallery.
+data MediaItem = MediaItem
+  { miId           :: Text
+  , miKind         :: MediaKind
+  , miThumbUrl     :: Text
+  , miDisplayUrl   :: Text
+  , miVideoUrl     :: Maybe Text
+  , miWidth        :: Maybe Int
+  , miHeight       :: Maybe Int
+  , miDurationMs   :: Maybe Int64
+  , miUploaderName :: Maybe Text
+  , miReadyAtMs    :: Int64
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON MediaItem where
+  toJSON m = object
+    [ "id"           .= miId m
+    , "kind"         .= miKind m
+    , "thumbUrl"     .= miThumbUrl m
+    , "displayUrl"   .= miDisplayUrl m
+    , "videoUrl"     .= miVideoUrl m
+    , "width"        .= miWidth m
+    , "height"       .= miHeight m
+    , "durationMs"   .= miDurationMs m
+    , "uploaderName" .= miUploaderName m
+    , "readyAtMs"    .= miReadyAtMs m
+    ]
+
+instance FromJSON MediaItem where
+  parseJSON = withObject "MediaItem" $ \o ->
+    MediaItem
+      <$> o .:  "id"
+      <*> o .:  "kind"
+      <*> o .:  "thumbUrl"
+      <*> o .:  "displayUrl"
+      <*> o .:? "videoUrl"
+      <*> o .:? "width"
+      <*> o .:? "height"
+      <*> o .:? "durationMs"
+      <*> o .:? "uploaderName"
+      <*> o .:  "readyAtMs"
+
+data MediaAdmin = MediaAdmin
+  { maId               :: Text
+  , maKind             :: MediaKind
+  , maOriginalFilename :: Text
+  , maContentType      :: Text
+  , maSizeBytes        :: Int64
+  , maStatus           :: Text
+  , maHidden           :: Bool
+  , maUploaderName     :: Maybe Text
+  , maIpAddress        :: Maybe Text
+  , maThumbUrl         :: Maybe Text
+  , maCreatedAt        :: Text
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON MediaAdmin where
+  toJSON m = object
+    [ "id"               .= maId m
+    , "kind"             .= maKind m
+    , "originalFilename" .= maOriginalFilename m
+    , "contentType"      .= maContentType m
+    , "sizeBytes"        .= maSizeBytes m
+    , "status"           .= maStatus m
+    , "hidden"           .= maHidden m
+    , "uploaderName"     .= maUploaderName m
+    , "ipAddress"        .= maIpAddress m
+    , "thumbUrl"         .= maThumbUrl m
+    , "createdAt"        .= maCreatedAt m
+    ]
+
+instance FromJSON MediaAdmin where
+  parseJSON = withObject "MediaAdmin" $ \o ->
+    MediaAdmin
+      <$> o .:  "id"
+      <*> o .:  "kind"
+      <*> o .:  "originalFilename"
+      <*> o .:  "contentType"
+      <*> o .:  "sizeBytes"
+      <*> o .:  "status"
+      <*> o .:  "hidden"
+      <*> o .:? "uploaderName"
+      <*> o .:? "ipAddress"
+      <*> o .:? "thumbUrl"
+      <*> o .:  "createdAt"
+
+newtype MediaHiddenBody = MediaHiddenBody
+  { mediaHidden :: Bool
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON MediaHiddenBody where
+  toJSON b = object ["hidden" .= mediaHidden b]
+
+instance FromJSON MediaHiddenBody where
+  parseJSON = withObject "MediaHiddenBody" $ \o -> MediaHiddenBody <$> o .: "hidden"

@@ -44,8 +44,27 @@ in {
 
     videoMaxBytes = lib.mkOption {
       type        = lib.types.int;
-      default     = 200 * 1024 * 1024;
+      # Cloudflare (free plan) rejects request bodies over 100 MB.
+      default     = 95 * 1024 * 1024;
       description = "Maximum accepted video upload size in bytes.";
+    };
+
+    mediaDir = lib.mkOption {
+      type        = lib.types.str;
+      default     = "/var/lib/wedding/media";
+      description = "Directory for guest photo/video uploads (originals and public derivatives).";
+    };
+
+    mediaMaxBytes = lib.mkOption {
+      type        = lib.types.int;
+      default     = 4 * 1024 * 1024 * 1024;
+      description = "Maximum size of a single guest photo/video upload, in bytes.";
+    };
+
+    mediaMinFreeBytes = lib.mkOption {
+      type        = lib.types.int;
+      default     = 5 * 1024 * 1024 * 1024;
+      description = "Refuse new guest uploads when free disk space would drop below this many bytes.";
     };
 
     cookieSecure = lib.mkOption {
@@ -97,6 +116,9 @@ in {
         WEDDING_PORT = toString cfg.port;
         WEDDING_VIDEO_DIR = cfg.videoDir;
         WEDDING_VIDEO_MAX_BYTES = toString cfg.videoMaxBytes;
+        WEDDING_MEDIA_DIR = cfg.mediaDir;
+        WEDDING_MEDIA_MAX_BYTES = toString cfg.mediaMaxBytes;
+        WEDDING_MEDIA_MIN_FREE_BYTES = toString cfg.mediaMinFreeBytes;
         WEDDING_COOKIE_SECURE = if cfg.cookieSecure then "true" else "false";
         WEDDING_QRENCODE_BIN = "${pkgs.qrencode}/bin/qrencode";
         WEDDING_PUBLIC_BASE_URL = cfg.publicBaseUrl;
@@ -106,11 +128,17 @@ in {
         WEDDING_ADMIN_PASSWORD_HASH_FILE = cfg.adminPasswordHashFile;
       };
 
+      # Guest media processing: vipsthumbnail (HEIC via libheif), ffmpeg and
+      # ffprobe for video, df for the free-space guard, nice for transcodes.
+      path = [ pkgs.vips pkgs.ffmpeg-headless pkgs.coreutils ];
+
       serviceConfig = {
         ExecStart   = "${cfg.package}/bin/wedding-backend";
         Restart     = "on-failure";
         DynamicUser = true;
-        StateDirectory = lib.mkIf (cfg.videoDir == "/var/lib/wedding/videos") "wedding/videos";
+        StateDirectory =
+          lib.optional (cfg.videoDir == "/var/lib/wedding/videos") "wedding/videos"
+          ++ lib.optional (cfg.mediaDir == "/var/lib/wedding/media") "wedding/media";
       } // lib.optionalAttrs (cfg.databaseUrlFile != null) {
         EnvironmentFile = cfg.databaseUrlFile;
       };

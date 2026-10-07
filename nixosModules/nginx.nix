@@ -117,6 +117,7 @@ in {
       # limit_req zones must be declared in the http{} context.
       appendHttpConfig = ''
         limit_req_zone $binary_remote_addr zone=wedding_login:10m rate=5r/m;
+        limit_req_zone $binary_remote_addr zone=wedding_media:10m rate=120r/m;
       '';
 
       virtualHosts.${cfg.serverName} = {
@@ -151,6 +152,25 @@ in {
 
           "/" = {
             tryFiles = "$uri $uri/ /index.html";
+          };
+
+          # The guest upload page is served by the SPA at /fotos; its script
+          # paths are relative, so a trailing slash would break them.
+          "= /fotos/" = {
+            return = "301 /fotos";
+          };
+
+          # Starting a guest upload: generous, because venue Wi-Fi puts every
+          # guest behind one NAT address. Chunk PUTs (/api/media/uploads/<id>)
+          # go through /api/ unthrottled.
+          "= /api/media/uploads" = {
+            proxyPass = "http://127.0.0.1:${toString backendCfg.port}";
+            extraConfig = ''
+              limit_req zone=wedding_media burst=200 nodelay;
+              limit_req_status 429;
+              client_max_body_size 1m;
+              ${proxyHeaders}
+            '';
           };
 
           # Exact match wins over the /api/ prefix: throttle login attempts.
