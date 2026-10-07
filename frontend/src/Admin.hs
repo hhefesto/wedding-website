@@ -20,8 +20,7 @@ import           Wedding.Types            (AttendanceStatus (..), Invitee (..),
                                             LoginRequest (..), RsvpAdmin (..),
                                             MediaAdmin (..), MediaHiddenBody (..),
                                             MediaKind (..),
-                                            ResolveDuplicateBody (..),
-                                            VideoAdmin (..))
+                                            ResolveDuplicateBody (..))
 
 main :: IO ()
 main = mainWidgetWithHead headW adminRoot
@@ -31,11 +30,10 @@ headW = do
   el "title" $ text "Wedding dashboard"
   el "style" $ text adminCSS
 
-data AdminTab = TabInvitees | TabRsvps | TabVideos | TabMedia | TabIps
+data AdminTab = TabInvitees | TabRsvps | TabMedia | TabIps
   deriving (Eq)
 
 data RsvpAdminAction = LinkRsvp Text (Maybe Int64) | DeleteRsvp Text | ResolveDuplicate Text Text
-data VideoAdminAction = LinkVideo Text (Maybe Int64) | DeleteVideo Text
 data IpAdminAction = CreateIp IpAssociationInput | UpdateIp Int64 IpAssociationInput | DeleteIp Int64
 data MediaAdminAction = SetMediaHidden Text Bool | DeleteMedia Text
 
@@ -58,7 +56,7 @@ adminLogin = elAttr "main" ("class" =: "admin-page") $
   elAttr "section" ("class" =: "admin-login") $ mdo
     elAttr "p" ("class" =: "admin-kicker") $ text "ADMIN"
     el "h1" $ text "Wedding dashboard"
-    elAttr "p" ("class" =: "admin-muted") $ text "Administra invitados, RSVP y videos."
+    elAttr "p" ("class" =: "admin-muted") $ text "Administra invitados, RSVP, fotos y videos."
     passEl <- inputElement $ def
       & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
         ( "class" =: "admin-input" <> "type" =: "password" <> "placeholder" =: "Password" <> "autocomplete" =: "current-password" )
@@ -87,21 +85,18 @@ adminDashboard loggedInE = elAttr "main" ("class" =: "admin-page") $ mdo
   let loadE = leftmost [() <$ pb, loggedInE, refreshE]
   inviteesRespE <- performRequestAsync (xhrGet "/api/admin/invitees" <$ loadE)
   rsvpsRespE <- performRequestAsync (xhrGet "/api/admin/rsvps" <$ loadE)
-  videosRespE <- performRequestAsync (xhrGet "/api/admin/videos" <$ loadE)
   ipsRespE <- performRequestAsync (xhrGet "/api/admin/ip-associations" <$ loadE)
   -- Guest uploads keep arriving during the party: refresh them on a timer.
   mediaTickE <- tickLossyFromPostBuildTime 30
   mediaRespE <- performRequestAsync (xhrGet "/api/admin/media" <$ leftmost [loadE, () <$ mediaTickE])
   inviteesDyn <- holdDyn [] (decodeXhrList <$> inviteesRespE)
   rsvpsDyn <- holdDyn [] (decodeXhrList <$> rsvpsRespE)
-  videosDyn <- holdDyn [] (decodeXhrList <$> videosRespE)
   ipsDyn <- holdDyn [] (decodeXhrList <$> ipsRespE)
   mediaDyn <- holdDyn [] (decodeXhrList <$> mediaRespE)
   refreshE <- elAttr "section" ("class" =: "admin-panel") $ do
     panelDyn <- dyn $ ffor tabDyn $ \tab -> case tab of
       TabInvitees -> adminInviteesPanel inviteesDyn
       TabRsvps    -> adminRsvpsPanel inviteesDyn rsvpsDyn
-      TabVideos   -> adminVideosPanel inviteesDyn videosDyn
       TabMedia    -> adminMediaPanel mediaDyn
       TabIps      -> adminIpsPanel inviteesDyn ipsDyn
     switchHold never panelDyn
@@ -112,13 +107,11 @@ adminTabs :: MonadWidget t m => m (Dynamic t AdminTab)
 adminTabs = elAttr "nav" ("class" =: "admin-tabs") $ mdo
   (inviteBtn, _) <- elDynAttr' "button" (tabAttrs TabInvitees <$> tabDyn) $ text "Invitados"
   (rsvpBtn, _) <- elDynAttr' "button" (tabAttrs TabRsvps <$> tabDyn) $ text "RSVPs"
-  (videoBtn, _) <- elDynAttr' "button" (tabAttrs TabVideos <$> tabDyn) $ text "Videos"
   (mediaBtn, _) <- elDynAttr' "button" (tabAttrs TabMedia <$> tabDyn) $ text "Fotos"
   (ipBtn, _) <- elDynAttr' "button" (tabAttrs TabIps <$> tabDyn) $ text "IPs"
   tabDyn <- holdDyn TabInvitees $ leftmost
     [ TabInvitees <$ domEvent Click inviteBtn
     , TabRsvps    <$ domEvent Click rsvpBtn
-    , TabVideos   <$ domEvent Click videoBtn
     , TabMedia    <$ domEvent Click mediaBtn
     , TabIps      <$ domEvent Click ipBtn
     ]
@@ -217,44 +210,6 @@ adminRsvpRow inviteesDyn rsvpsDyn rsvpDyn = elAttr "article" ("class" =: "admin-
       , DeleteRsvp <$> (current ridD `tag` domEvent Click deleteBtn)
       ]
 
-adminVideosPanel :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t [VideoAdmin] -> m (Event t ())
-adminVideosPanel inviteesDyn videosDyn = elAttr "div" ("class" =: "admin-card") $ do
-  el "h2" $ do
-    text "Videos ("
-    dynText (T.pack . show . length <$> videosDyn)
-    text ")"
-  actionDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList videosDyn (adminVideoRow inviteesDyn)
-  let actionE = switchDyn (leftmost <$> actionDyn)
-      reqE = ffor actionE $ \action -> case action of
-        LinkVideo vid miid -> adminJsonRequest "PUT" ("/api/admin/videos/" <> vid <> "/invitee") (LinkInviteeBody miid)
-        DeleteVideo vid    -> xhrDelete ("/api/admin/videos/" <> vid)
-  respE <- performRequestAsync reqE
-  pure (xhrOk respE)
-
-adminVideoRow :: MonadWidget t m => Dynamic t [Invitee] -> Dynamic t VideoAdmin -> m (Event t VideoAdminAction)
-adminVideoRow inviteesDyn videoDyn = elAttr "article" ("class" =: "admin-row") $ do
-  el "div" $ do
-    el "strong" $ dynText (vaOriginalFilename <$> videoDyn)
-    el "p" $ dynText (videoMeta <$> videoDyn)
-    el "p" $ dynText (videoSubmitterMeta <$> videoDyn)
-  elAttr "div" ("class" =: "admin-row-actions") $ do
-    pb <- getPostBuild
-    let selectedInviteeD = maybe "" (T.pack . show) . vaInviteeId <$> videoDyn
-    selectedDyn <- dropdown "" (simpleInviteeDropdownOptions <$> inviteesDyn) $ def
-      & dropdownConfig_attributes .~ constDyn ("class" =: "admin-input")
-      & dropdownConfig_setValue .~ leftmost [current selectedInviteeD `tag` pb, updated selectedInviteeD]
-    elDynAttr "a" (videoDownloadAttrs <$> videoDyn) $ text "Descargar"
-    (linkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small" <> "type" =: "button") $ text "Ligar"
-    (unlinkBtn, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $ text "Sin invitacion"
-    (deleteBtn, _) <- elAttr' "button" ("class" =: "admin-danger" <> "type" =: "button") $ text "Eliminar"
-    let vidD = vaId <$> videoDyn
-        parsedIdD = parseMaybeInt64 <$> _dropdown_value selectedDyn
-    pure $ leftmost
-      [ attachWith LinkVideo (current vidD) (current parsedIdD `tag` domEvent Click linkBtn)
-      , attachWith (\vid _ -> LinkVideo vid Nothing) (current vidD) (domEvent Click unlinkBtn)
-      , DeleteVideo <$> (current vidD `tag` domEvent Click deleteBtn)
-      ]
-
 -- | Guest photos & videos from the QR upload page. Hiding removes an item
 -- from the public gallery; deleting also removes the full-quality original,
 -- so it takes a second, confirming click.
@@ -329,7 +284,7 @@ adminIpsPanel inviteesDyn ipsDyn = elAttr "div" ("class" =: "admin-card") $ do
     text "IPs ("
     dynText (T.pack . show . length <$> ipsDyn)
     text ")"
-  elAttr "p" ("class" =: "admin-muted") $ text "Relaciona direcciones IP conocidas con invitaciones para resolver RSVP y videos sin codigo."
+  elAttr "p" ("class" =: "admin-muted") $ text "Relaciona direcciones IP conocidas con invitaciones para resolver RSVP sin codigo."
   createE <- adminIpCreateForm inviteesDyn
   actionDyn <- elAttr "div" ("class" =: "admin-list") $ simpleList ipsDyn (adminIpRow inviteesDyn)
   let actionE = leftmost [createE, switchDyn (leftmost <$> actionDyn)]
@@ -500,19 +455,6 @@ simpleInviteeDropdownOptions invitees = Map.fromList $
 totalGuests :: [RsvpAdmin] -> Int
 totalGuests = sum . map (\r -> if raStatus r == Attending then raGuestCount r else 0)
 
-videoMeta :: VideoAdmin -> Text
-videoMeta v = vaContentType v <> " - " <> T.pack (show (fromIntegral (vaSizeBytes v) / (1048576 :: Double))) <> " MB - " <> vaCreatedAt v
-
-videoSubmitterMeta :: VideoAdmin -> Text
-videoSubmitterMeta v = T.intercalate " | " (filter (not . T.null)
-  [ "Subido por: " <> maybe "anonimo" id (vaSubmitterName v)
-  , "RSVP: " <> maybe "sin RSVP" id (vaRsvpName v)
-  , "Invitacion: " <> maybe "sin invitacion" id (vaInviteeName v)
-  , "IP: " <> maybe "sin IP" id (vaIpAddress v)
-  , "Estado: " <> vaResolutionStatus v
-  , maybe "" ("Mensaje: " <>) (vaMessage v)
-  ])
-
 ipAssociationMeta :: IpAssociationAdmin -> Text
 ipAssociationMeta a = T.intercalate " | "
   [ "Invitacion: " <> ipaInviteeName a <> " - Codigo: " <> maybe "none" id (ipaInviteeCode a)
@@ -520,10 +462,6 @@ ipAssociationMeta a = T.intercalate " | "
   , "Primera vez: " <> ipaFirstSeenAt a
   , "Ultima vez: " <> ipaLastSeenAt a
   ]
-
-videoDownloadAttrs :: VideoAdmin -> Map Text Text
-videoDownloadAttrs v =
-  "class" =: "admin-btn small" <> "href" =: ("/api/admin/videos/" <> vaId v <> "/download")
 
 adminCopyQrJS :: Text
 adminCopyQrJS = T.concat
