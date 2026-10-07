@@ -44,9 +44,9 @@ siteW = do
     introOverlay
     progressBar
     heroSection
+    itinerarioSection
     rsvpSection
     ubicacionSection
-    itinerarioSection
     dressCodeSection
     mesaRegalosSection
     videoOpenE' <- videoMsgSection
@@ -204,9 +204,9 @@ fixedNav =
   where
     navItems :: [(Text, Text)]
     navItems =
-      [ ("#rsvp",          "RSVP")
+      [ ("#itinerario",    "ITINERARIO")
+      , ("#rsvp",          "RSVP")
       , ("#ubicacion",     "UBICACI\211N")
-      , ("#itinerario",    "ITINERARIO")
       , ("#dress-code",    "DRESS CODE")
       , ("#mesa-regalos",  "REGALOS")
       , ("#video-mensaje", "VIDEO")
