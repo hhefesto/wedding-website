@@ -132,6 +132,10 @@
             ${ghcjsBuild}/bin/wedding-admin-frontend.jsexe/ "$out/"
 
           install -m644 ${./admin-index.html} "$out/index.html"
+
+          # Same cache-bust as the site (these script paths are absolute).
+          v=$(cat "$out/rts.js" "$out/lib.js" "$out/out.js" "$out/runmain.js" | sha256sum | cut -c1-12)
+          sed -i -E "s#src=\"/admin/(rts|lib|out|runmain)\.js\"#src=\"/admin/\1.js?v=$v\"#g" "$out/index.html"
         '';
       in {
         # ── Packages ────────────────────────────────────────────────────────
@@ -201,6 +205,8 @@
           test -f ${self'.packages.website}/qr-fotos.png || (echo "MISSING qr-fotos.png"; exit 1)
           grep -q 'out.js?v=' ${self'.packages.website}/index.html \
             || (echo "index.html scripts are not cache-busted"; exit 1)
+          grep -q 'out.js?v=' ${self'.packages.admin-website}/index.html \
+            || (echo "admin index.html scripts are not cache-busted"; exit 1)
           for img in 1.png 2.png 3.png 4.png 5.png itinerario.jpeg; do
             test -f ${self'.packages.website}/images/$img \
               || (echo "MISSING images/$img"; exit 1)
