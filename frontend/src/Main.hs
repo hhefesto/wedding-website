@@ -40,7 +40,7 @@ bodyW = do
 
 siteW :: (MonadWidget t m, MonadJSM (Performable m)) => m ()
 siteW = do
-  videoOpenE <- elAttr "div" ("class" =: "site-shell") $ do
+  elAttr "div" ("class" =: "site-shell") $ do
     introOverlay
     progressBar
     heroSection
@@ -49,15 +49,12 @@ siteW = do
     ubicacionSection
     dressCodeSection
     mesaRegalosSection
-    videoOpenE' <- videoMsgSection
     fotosSection
     galleryBand "galeria" =<< galleryFeed never
     fixedNav
     backToTop
-    pure videoOpenE'
-  videoUploadOverlay videoOpenE
   pb <- getPostBuild
-  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> cardScrollIndicatorsJS <> ";" <> rsvpInlinePrefillJS <> ";" <> videoUploadGuestJS)) <$ pb
+  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> settleOnViewJS <> ";" <> cardScrollIndicatorsJS <> ";" <> rsvpInlinePrefillJS)) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -144,48 +141,21 @@ cardScrollIndicatorsJS =
   <> "schedule();var n=0,t=setInterval(function(){updateAll();if(++n>80)clearInterval(t);},100);"
   <> "})()"
 
-videoUploadGuestJS :: String
-videoUploadGuestJS =
-  "(function(){"
-  <> "function clean(t){return (t||'').replace(/^\\\"|\\\"$/g,'');}"
-  <> "function code(){return new URLSearchParams(location.search||'').get('code')||'';}"
-  <> "function status(m,e){var s=document.getElementById('video-upload-status');if(s){s.textContent=m||'';s.classList.toggle('is-error',!!e);}}"
-  <> "function enable(){var b=document.getElementById('video-upload-open');if(b){b.classList.remove('is-disabled');b.setAttribute('aria-disabled','false');}}"
-  <> "function progress(v,show){var wrap=document.getElementById('video-upload-progress');var bar=document.getElementById('video-upload-progress-bar');var txt=document.getElementById('video-upload-progress-text');var n=Math.max(0,Math.min(100,Math.round(v||0)));if(wrap){wrap.hidden=!show;wrap.classList.toggle('is-error',false);}if(bar){bar.style.width=n+'%';bar.setAttribute('aria-valuenow',String(n));}if(txt)txt.textContent=n+'%';}"
-  <> "function fail(m){var wrap=document.getElementById('video-upload-progress');if(wrap)wrap.classList.add('is-error');status(m,true);}"
-  <> "function upload(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.guestReady)return;f.dataset.guestReady='1';f.addEventListener('submit',function(e){e.preventDefault();var file=document.getElementById('video-upload-file');if(!file||!file.files||!file.files.length){fail('Selecciona un video.');return;}var data=new FormData(f);var c=code();if(c)data.set('invitationCode',c);var xhr=new XMLHttpRequest();xhr.open('POST','/api/videos');xhr.withCredentials=true;xhr.upload.onprogress=function(ev){if(ev.lengthComputable)progress((ev.loaded/ev.total)*100,true);};xhr.onload=function(){if(xhr.status>=200&&xhr.status<300){progress(100,true);status('Video recibido. Gracias por enviarlo.',false);f.reset();}else{fail(clean(xhr.responseText)||'No se pudo subir el video. Intentalo de nuevo.');}};xhr.onerror=function(){fail('No se pudo subir el video. Intentalo de nuevo.');};progress(0,true);status('Subiendo video...',false);xhr.send(data);});}"
-  <> "function start(){enable();upload();}"
-  <> "start();var n=0,t=setInterval(function(){start();if(++n>100)clearInterval(t);},50);"
+-- Plays [data-settle] entrances once, the first time each element is seen.
+-- Elements are only hidden after this runs, so without JS they stay visible.
+settleOnViewJS :: String
+settleOnViewJS =
+  "(function(){if(!window.IntersectionObserver)return;"
+  <> "var io=new IntersectionObserver(function(es){es.forEach(function(e){"
+  <> "if(e.isIntersecting){e.target.classList.add('is-in');io.unobserve(e.target);}});},{threshold:.2});"
+  <> "(function start(){var xs=document.querySelectorAll('[data-settle]');"
+  <> "if(!xs.length){setTimeout(start,50);return;}"
+  <> "xs.forEach(function(x){x.classList.add('is-armed');io.observe(x);});})();"
   <> "})()"
-
-videoUploadShimJS :: String
-videoUploadShimJS =
-  ""
-{-
-  "(function(){var identified=false;function code(){var p=new URLSearchParams(location.search||'');var c=p.get('code')||'';try{if(c)localStorage.setItem('weddingInvitationCode',c);else c=localStorage.getItem('weddingInvitationCode')||'';}catch(e){}return c;}function mark(v){identified=!!v;window.__weddingRsvpIdentified=identified;var b=document.getElementById('video-upload-open');if(b){b.classList.toggle('is-disabled',!identified);b.setAttribute('aria-disabled',identified?'false':'true');}}function buttonMessage(){var b=document.getElementById('video-upload-open');if(!b)return null;var m=document.getElementById('video-login-message');if(!m){m=document.createElement('p');m.id='video-login-message';m.className='video-login-message';b.parentNode.insertBefore(m,b.nextSibling);}return m;}function setButtonMessage(t){var m=buttonMessage();if(m)m.textContent=t||'';}function fillCode(){var c=code();var i=document.getElementById('rsvp-invitation-code');if(i&&c&&i.value!==c){i.value=c;i.dispatchEvent(new Event('input',{bubbles:true}));}return c;}function checkSession(){return fetch('/api/rsvp/me',{credentials:'same-origin'}).then(function(r){mark(r.ok);return r.ok;}).catch(function(){mark(false);return false;});}function rsvpLogin(){var c=code();if(!c||window.__weddingRsvpLoginTried)return;window.__weddingRsvpLoginTried=1;fetch('/api/rsvp/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).then(function(r){if(r.ok){mark(true);setButtonMessage('');}}).catch(function(){});}function watchRsvpSubmit(){if(window.__weddingRsvpSubmitWatchReady)return;window.__weddingRsvpSubmitWatchReady=1;var open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__weddingRsvpUrl=String(u||'');return open.apply(this,arguments);};var send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__weddingRsvpUrl==='/api/rsvp')this.addEventListener('load',function(){if(this.status>=200&&this.status<300){mark(true);setButtonMessage('');}});return send.apply(this,arguments);};}function openRsvpFromLink(){if(window.__weddingRsvpAutoOpened||!code()||location.hash!=='#rsvp')return;var b=document.getElementById('rsvp-open');if(!b)return;window.__weddingRsvpAutoOpened=1;b.click();setTimeout(fillCode,80);}function start(){watchRsvpSubmit();fillCode();openRsvpFromLink();var openBtn=document.getElementById('video-upload-open');if(openBtn&&!openBtn.dataset.gated){openBtn.dataset.gated='1';openBtn.addEventListener('click',function(ev){if(!identified){ev.preventDefault();ev.stopImmediatePropagation();setButtonMessage('Primero identificate en la seccion RSVP con tu invitacion.');var r=document.getElementById('rsvp');if(r)r.scrollIntoView({behavior:'smooth'});}},true);}var f=document.getElementById('video-upload-form');if(!f||f.dataset.ready)return;f.dataset.ready='1';var s=document.getElementById('video-upload-status');var b=document.getElementById('video-upload-submit');function set(m,e){s.textContent=m||'';s.classList.toggle('is-error',!!e);}f.addEventListener('submit',function(ev){ev.preventDefault();var file=document.getElementById('video-upload-file').files[0];if(!file){set('Elige un video primero.',true);return;}b.disabled=true;fetch('/api/rsvp/me',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('no rsvp');mark(true);var d=new FormData(f);set('Subiendo...',false);return fetch('/api/videos',{method:'POST',body:d,credentials:'same-origin'});}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(){f.reset();set('Video recibido. Gracias.',false);}).catch(function(){mark(false);set('Confirma tu RSVP con tu codigo de invitacion antes de subir video.',true);}).finally(function(){b.disabled=false;});});}mark(false);checkSession();rsvpLogin();start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
--}
 
 rsvpInlinePrefillJS :: String
 rsvpInlinePrefillJS =
   "(function(){function set(id,v){var el=document.getElementById(id);if(el&&el.value!==v){el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));}}function start(){var c=new URLSearchParams(location.search||'').get('code')||'';if(!c){set('rsvp-invitation-code','');return;}if(window.__weddingRsvpInlinePrefill)return;window.__weddingRsvpInlinePrefill=1;fetch('/api/invite?code='+encodeURIComponent(c),{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();}).then(function(i){set('rsvp-invitation-code',c);set('rsvp-name',i.name||'');}).catch(function(){set('rsvp-invitation-code','');});}start();var n=0,t=setInterval(function(){start();if(++n>100)clearInterval(t);},50);})()"
-
-videoUploadFixJS :: String
-videoUploadFixJS =
-{-
-  "(function(){function txt(t){return (t||'').replace(/^\\\"|\\\"$/g,'');}function setStatus(m,e){var s=document.getElementById('video-upload-status');if(s){s.textContent=m||'';s.classList.toggle('is-error',!!e);}}function setLoginMessage(m){var b=document.getElementById('video-upload-open');if(!b)return;var p=document.getElementById('video-login-message');if(!p){p=document.createElement('p');p.id='video-login-message';p.className='video-login-message';b.parentNode.insertBefore(p,b.nextSibling);}p.textContent=m||'';}function rsvpStatus(m){setTimeout(function(){var xs=document.querySelectorAll('#rsvp-overlay .rsvp-status');for(var i=0;i<xs.length;i++){if(xs[i].offsetParent!==null){xs[i].textContent=m;xs[i].style.display='';xs[i].classList.add('is-error');}}},25);}function code(){var p=new URLSearchParams(location.search||'');return p.get('code')||'';}function enhanceRsvpErrors(){if(window.__weddingRsvpErrorsEnhanced)return;window.__weddingRsvpErrorsEnhanced=1;var open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__weddingRsvpFixUrl=String(u||'');return open.apply(this,arguments);};var send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__weddingRsvpFixUrl==='/api/rsvp')this.addEventListener('load',function(){if(this.status>=400)rsvpStatus(txt(this.responseText)||'Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});return send.apply(this,arguments);};}function enhanceInviteLogin(){var c=code();if(!c||window.__weddingRsvpLoginMessageTried)return;window.__weddingRsvpLoginMessageTried=1;fetch('/api/rsvp/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).then(function(r){if(!r.ok)setLoginMessage('Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});}function enhanceUpload(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.fixReady)return;f.dataset.fixReady='1';var b=document.getElementById('video-upload-submit');f.addEventListener('submit',function(ev){ev.preventDefault();ev.stopImmediatePropagation();var input=document.getElementById('video-upload-file');var file=input&&input.files&&input.files[0];if(!file){setStatus('Elige un video primero.',true);return;}if(b)b.disabled=true;setStatus('Subiendo...',false);var controller=window.AbortController?new AbortController():null;var timer=setTimeout(function(){if(controller)controller.abort();},120000);fetch('/api/rsvp/me',{credentials:'same-origin',signal:controller&&controller.signal}).then(function(r){if(!r.ok)throw new Error('Confirma tu RSVP con tu codigo de invitacion antes de subir video.');var d=new FormData(f);d.delete('name');return fetch('/api/videos',{method:'POST',body:d,credentials:'same-origin',signal:controller&&controller.signal});}).then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error(txt(t)||'No pudimos subir el video. Intentalo de nuevo.');});return r.json();}).then(function(){f.reset();setStatus('Video recibido. Gracias.',false);}).catch(function(e){setStatus(e&&e.name==='AbortError'?'La subida tardo demasiado. Intentalo con un video mas pequeno.':(e&&e.message)||'No pudimos subir el video. Intentalo de nuevo.',true);}).finally(function(){clearTimeout(timer);if(b)b.disabled=false;});},true);}function start(){enhanceRsvpErrors();enhanceInviteLogin();enhanceUpload();}start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
-
-videoUploadProgressJS :: String
--}
-  ""
-
-videoUploadProgressJS :: String
-videoUploadProgressJS =
-{-
-  "(function(){function clean(t){return (t||'').replace(/^\\\"|\\\"$/g,'');}function status(m,e){var s=document.getElementById('video-upload-status');if(s){s.textContent=m||'';s.classList.toggle('is-error',!!e);}}function progress(v,show){var wrap=document.getElementById('video-upload-progress');var bar=document.getElementById('video-upload-progress-bar');var txt=document.getElementById('video-upload-progress-text');var n=Math.max(0,Math.min(100,Math.round(v||0)));if(wrap){wrap.hidden=!show;wrap.classList.toggle('is-error',false);}if(bar){bar.style.width=n+'%';bar.setAttribute('aria-valuenow',String(n));}if(txt)txt.textContent=n+'%';}function fail(m){var wrap=document.getElementById('video-upload-progress');if(wrap)wrap.classList.add('is-error');status(m,true);}function loginMessage(m){var b=document.getElementById('video-upload-open');if(!b)return;var p=document.getElementById('video-login-message');if(!p){p=document.createElement('p');p.id='video-login-message';p.className='video-login-message';b.parentNode.insertBefore(p,b.nextSibling);}p.textContent=m||'';}function code(){var p=new URLSearchParams(location.search||'');return p.get('code')||'';}function rsvpStatus(m){setTimeout(function(){var xs=document.querySelectorAll('#rsvp-overlay .rsvp-status');for(var i=0;i<xs.length;i++){if(xs[i].offsetParent!==null){xs[i].textContent=m;xs[i].style.display='';xs[i].classList.add('is-error');}}},25);}function enhanceRsvpErrors(){if(window.__weddingRsvpProgressErrors)return;window.__weddingRsvpProgressErrors=1;var open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__weddingRsvpProgressUrl=String(u||'');return open.apply(this,arguments);};var send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__weddingRsvpProgressUrl==='/api/rsvp')this.addEventListener('load',function(){if(this.status>=400)rsvpStatus(clean(this.responseText)||'Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});return send.apply(this,arguments);};}function enhanceInviteLogin(){var c=code();if(!c||window.__weddingRsvpProgressLogin)return;window.__weddingRsvpProgressLogin=1;fetch('/api/rsvp/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:c})}).then(function(r){if(!r.ok)loginMessage('Codigo incorrecto. Revisa tu invitacion o pidenos el codigo correcto.');});}function uploadWithProgress(form,button){return new Promise(function(resolve,reject){var xhr=new XMLHttpRequest();var timeout=setTimeout(function(){xhr.abort();reject(new Error('La subida tardo demasiado. Intentalo con un video mas pequeno.'));},120000);xhr.open('POST','/api/videos');xhr.withCredentials=true;xhr.upload.onprogress=function(ev){if(ev.lengthComputable){var pct=ev.total?ev.loaded/ev.total*100:0;progress(pct,true);status('Subiendo... '+Math.round(pct)+'%',false);}else{progress(5,true);status('Subiendo...',false);}};xhr.onload=function(){clearTimeout(timeout);if(xhr.status>=200&&xhr.status<300){progress(100,true);resolve();}else{reject(new Error(clean(xhr.responseText)||'No pudimos subir el video. Intentalo de nuevo.'));}};xhr.onerror=function(){clearTimeout(timeout);reject(new Error('No pudimos subir el video. Revisa tu conexion e intentalo de nuevo.'));};xhr.onabort=function(){clearTimeout(timeout);reject(new Error('La subida fue cancelada. Intentalo de nuevo.'));};var data=new FormData(form);data.delete('name');xhr.send(data);});}function enhanceUpload(){var f=document.getElementById('video-upload-form');if(!f||f.dataset.progressReady)return;f.dataset.progressReady='1';f.dataset.fixReady='1';var b=document.getElementById('video-upload-submit');f.addEventListener('submit',function(ev){ev.preventDefault();ev.stopImmediatePropagation();var input=document.getElementById('video-upload-file');var file=input&&input.files&&input.files[0];if(!file){progress(0,false);status('Elige un video primero.',true);return;}if(b)b.disabled=true;progress(0,true);status('Preparando subida...',false);fetch('/api/rsvp/me',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('Confirma tu RSVP con tu codigo de invitacion antes de subir video.');return uploadWithProgress(f,b);}).then(function(){f.reset();progress(100,true);status('Video recibido. Gracias.',false);}).catch(function(e){fail((e&&e.message)||'No pudimos subir el video. Intentalo de nuevo.');}).finally(function(){if(b)b.disabled=false;});},true);}function start(){enhanceRsvpErrors();enhanceInviteLogin();enhanceUpload();}start();var n=0,t=setInterval(function(){start();if(++n>200)clearInterval(t);},50);})()"
-
-fixedNav :: DomBuilder t m => m ()
--}
-  ""
 
 fixedNav :: DomBuilder t m => m ()
 fixedNav =
@@ -209,7 +179,6 @@ fixedNav =
       , ("#ubicacion",     "UBICACI\211N")
       , ("#dress-code",    "DRESS CODE")
       , ("#mesa-regalos",  "REGALOS")
-      , ("#video-mensaje", "VIDEO")
       , ("#fotos",         "FOTOS")
       ]
 
@@ -257,7 +226,7 @@ itinerarioSection =
        <> "target" =: "_blank"
        <> "rel"    =: "noopener"
         ) $ do
-        elAttr "span" ("class" =: "itinerario-settle") $
+        elAttr "span" ("class" =: "itinerario-settle" <> "data-settle" =: "") $
           elAttr "span" ("class" =: "itinerario-card") $ do
             elAttr "img"
               ( "class"    =: "itinerario-img"
@@ -580,33 +549,8 @@ qrBlock newTab url image label =
       | newTab    = "target" =: "_blank" <> "rel" =: "noopener noreferrer"
       | otherwise = mempty
 
--- ── VIDEO PARA LOS NOVIOS ─────────────────────────────────────────────────────
-
-videoMsgSection :: DomBuilder t m => m (Event t ())
-videoMsgSection =
-  secImage "video-mensaje" $ do
-    elAttr "img"
-      ( "class"   =: "section-img"
-     <> "src"     =: "images/5.png"
-     <> "alt"     =: ""
-     <> "loading" =: "lazy"
-      ) blank
-    elAttr "div" ("class" =: "section-overlay") $ do
-      elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
-        text "VIDEO PARA LOS NOVIOS"
-      elAttr "div" ("class" =: "video-mask" <> "data-reveal" =: "") $
-        elAttr "div" ("class" =: "glass rect video-card") $ do
-          elAttr "p" ("class" =: "video-msg-text") $
-            text "M\225ndale un video corto a los novios"
-          (btnEl, _) <- elAttr' "button"
-            ( "class" =: "rsvp-btn video-wa-btn"
-           <> "type"  =: "button"
-           <> "id"    =: "video-upload-open"
-            ) $ text "Subir video"
-          return (domEvent Click btnEl)
-
--- ── FOTOS DE LA BODA ─────────────────────────────────────────────────────────
--- Invitation to share photos. The QR (printed on the tables too) and the
+-- ── FOTOS Y VIDEOS ───────────────────────────────────────────────────────────
+-- The one place guests share photos and videos. The QR (printed on the tables too) and the
 -- button both open /fotos; the live gallery band follows this section.
 
 fotosSection :: DomBuilder t m => m ()
@@ -620,74 +564,11 @@ fotosSection =
       ) blank
     elAttr "div" ("class" =: "section-overlay") $ do
       elAttr "p" ("class" =: "label label-center" <> "data-reveal" =: "") $
-        text "FOTOS DE LA BODA"
+        text "FOTOS Y VIDEOS"
       elAttr "div" ("class" =: "glass rect fotos-invite-card" <> "data-reveal" =: "") $ do
         elAttr "p" ("class" =: "mesa-label") $ text "EN CALIDAD ORIGINAL"
         elAttr "p" ("class" =: "fotos-invite-copy") $ text "Aparecer\225n aqu\237 abajo, en vivo."
         qrBlock False "/fotos" "qr-fotos.png" "Subir fotos y videos"
-
--- ── Video upload popup ───────────────────────────────────────────────────────
-
-videoUploadOverlay :: MonadWidget t m => Event t () -> m ()
-videoUploadOverlay openE = mdo
-  visibleDyn <- holdDyn False $ leftmost [True <$ openE, False <$ closeE]
-  let overlayAttrs = ffor visibleDyn $ \isVisible ->
-        "id" =: "video-upload-overlay" <> "class" =: "construction-overlay"
-          <> if isVisible then mempty else "style" =: "display:none"
-
-  closeE <- elDynAttr "div" overlayAttrs $ do
-    elAttr "div" ("class" =: "construction-backdrop" <> "aria-hidden" =: "true") blank
-    elAttr "div"
-      ( "class" =: "construction-modal glass rect video-upload-modal"
-     <> "role" =: "dialog"
-     <> "aria-modal" =: "true"
-      ) $ do
-      (closeBtnEl, _) <- elAttr' "button"
-        ( "class" =: "construction-close"
-       <> "type" =: "button"
-       <> "aria-label" =: "Cerrar"
-        ) $ text "\215"
-      elAttr "p" ("class" =: "construction-kicker") $ text "VIDEO"
-      elAttr "h3" ("class" =: "construction-title") $ text "Sube tu mensaje"
-      elAttr "p" ("class" =: "construction-copy") $
-        text "M\225ndanos un video privado o p\250blico para proyectar en la boda, puedes mandar cuantos videos gustes pero procura que no pesen tanto por favor."
-      elAttr "form" ("id" =: "video-upload-form" <> "class" =: "video-upload-form") $ do
-        elAttr "textarea"
-          ( "id" =: "video-upload-message"
-         <> "class" =: "rsvp-input video-upload-message"
-         <> "name" =: "message"
-         <> "placeholder" =: "Mensaje opcional"
-          ) blank
-        elAttr "input"
-          ( "id" =: "video-upload-file"
-         <> "class" =: "rsvp-input video-upload-file"
-         <> "name" =: "video"
-         <> "type" =: "file"
-         <> "accept" =: "video/*"
-          ) blank
-        elAttr "p" ("id" =: "video-upload-status" <> "class" =: "rsvp-status") blank
-        elAttr "div"
-          ( "id" =: "video-upload-progress"
-         <> "class" =: "video-upload-progress"
-         <> "hidden" =: "hidden"
-          ) $ do
-          elAttr "div" ("class" =: "video-upload-progress-track") $
-            elAttr "div"
-              ( "id" =: "video-upload-progress-bar"
-             <> "class" =: "video-upload-progress-bar"
-             <> "role" =: "progressbar"
-             <> "aria-valuemin" =: "0"
-             <> "aria-valuemax" =: "100"
-             <> "aria-valuenow" =: "0"
-              ) blank
-          elAttr "p" ("id" =: "video-upload-progress-text" <> "class" =: "video-upload-progress-text") $ text "0%"
-        elAttr "button"
-          ( "id" =: "video-upload-submit"
-         <> "class" =: "rsvp-btn construction-ok"
-         <> "type" =: "submit"
-          ) $ text "Enviar video"
-      return (domEvent Click closeBtnEl)
-  return ()
 
 -- ── Under construction popup ──────────────────────────────────────────────────
 
@@ -877,7 +758,6 @@ siteCSS = T.unlines
   , "#dress-code   { background-color: #4a3010; }"
   , "#rsvp         { background: radial-gradient(ellipse at 50% 30%, #3a2614 0%, #1c1410 70%); }"
   , "#mesa-regalos { background-color: #382e24; }"
-  , "#video-mensaje { background: linear-gradient(180deg, #2c2418 0%, #1a120a 100%); }"
   , "#fotos        { background-color: #2f241b; }"
   , ""
   , ".spacer { flex: 1; }"
@@ -1451,7 +1331,6 @@ siteCSS = T.unlines
   , "  text-decoration: none;"
   , "  outline: none;"
   , "  -webkit-tap-highlight-color: transparent;"
-  , "  view-timeline: --itin block;"
   , "}"
   , ".itinerario-settle { display: block; }"
   , ".itinerario-card {"
@@ -1528,22 +1407,13 @@ siteCSS = T.unlines
   , ".itinerario-link:focus-visible .itinerario-card { outline: 2px solid #d4b483; outline-offset: 10px; transform: rotate(0deg); }"
   , ".itinerario-link:focus-visible .itinerario-hint { color: #d4b483; }"
   , ".itinerario-link:active .itinerario-card { transform: rotate(0deg) translateY(-1px) scale(.99); transition-duration: .15s; }"
-  , "@supports (animation-timeline: view()) {"
-  , "  .itinerario-settle {"
-  , "    animation: itinSettle linear both;"
-  , "    animation-timing-function: cubic-bezier(.19,1,.22,1);"
-  , "    animation-timeline: --itin;"
-  , "    animation-range: entry 0% cover 45%;"
-  , "  }"
-  , "  .itinerario-sheen::after {"
-  , "    animation: itinSheen linear both;"
-  , "    animation-timeline: --itin;"
-  , "    animation-range: cover 28% cover 62%;"
-  , "  }"
-  , "}"
-  , "@keyframes itinSettle {"
-  , "  from { opacity: 0; transform: translateY(9%) rotate(-3.2deg) scale(.93); }"
-  , "  to   { opacity: 1; transform: none; }"
+  -- Time-based, played once when the card scrolls into view (settleOnViewJS).
+  -- A scroll-linked timeline here jumped whenever a phone's toolbar
+  -- showed or hid, i.e. on every change of scroll direction.
+  , "@media (prefers-reduced-motion: no-preference) {"
+  , "  .itinerario-settle.is-in { transition: opacity .9s ease-out, transform 1.4s cubic-bezier(.19,1,.22,1); }"
+  , "  .itinerario-settle.is-armed:not(.is-in) { opacity: 0; transform: translateY(9%) rotate(-3.2deg) scale(.93); }"
+  , "  .itinerario-settle.is-in .itinerario-sheen::after { animation: itinSheen 1.5s ease-in-out .55s both; }"
   , "}"
   , "@keyframes itinSheen {"
   , "  0%   { opacity: 0; transform: translateX(-70%); }"
@@ -1551,36 +1421,6 @@ siteCSS = T.unlines
   , "  75%  { opacity: 1; }"
   , "  100% { opacity: 0; transform: translateX(70%); }"
   , "}"
-  , ""
-
-  -- ── Video mensaje ─────────────────────────────────────────────────────────
-  , ".video-mask { overflow: hidden; }"
-  , "#video-mensaje .section-overlay { padding-bottom: calc(var(--card-bottom-gap) * 1.1); }"
-  , ".video-card { text-align: center; margin-left: auto; margin-right: auto; }"
-  , ".video-msg-icon {"
-  , "  display: block;"
-  , "  font-size: 2.4rem;"
-  , "  margin-bottom: .7rem;"
-  , "  line-height: 1;"
-  , "}"
-  , ".video-msg-text {"
-  , "  font-size: 1em;"
-  , "  color: rgba(255,255,255,.85);"
-  , "  line-height: 1.72;"
-  , "  margin-bottom: .8rem;"
-  , "}"
-  , ".video-wa-btn { margin-top: .8rem; }"
-  , ".video-wa-btn.is-disabled { opacity: .48; cursor: not-allowed; filter: grayscale(.35); }"
-  , ".video-login-message { margin-top: .75rem; color: #ffdfb4; line-height: 1.55; font-size: .92rem; }"
-  , ".video-upload-form { margin-top: 1.1rem; text-align: left; }"
-  , ".video-upload-message { min-height: 6rem; resize: vertical; }"
-  , ".video-upload-file { padding: .62rem; }"
-  , ".video-upload-progress { margin: .4rem 0 1rem; }"
-  , ".video-upload-progress[hidden] { display: none; }"
-  , ".video-upload-progress-track { overflow: hidden; height: .55rem; border: 1px solid rgba(255,255,255,.36); border-radius: 999px; background: rgba(255,255,255,.1); }"
-  , ".video-upload-progress-bar { width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(255,255,255,.72), rgba(255,232,195,.96)); box-shadow: 0 0 18px rgba(255,232,195,.28); transition: width .18s ease-out; }"
-  , ".video-upload-progress-text { margin: .45rem 0 0; color: rgba(255,255,255,.82); font-size: .88rem; letter-spacing: .06em; text-align: right; }"
-  , ".video-upload-progress.is-error .video-upload-progress-bar { background: linear-gradient(90deg, rgba(255,180,168,.8), rgba(255,120,105,.95)); }"
   , ".rsvp-status.is-error { color: #ffb4a8; }"
   , ""
 
@@ -1652,6 +1492,14 @@ siteCSS = T.unlines
   , ""
 
   -- ── Reduced motion ────────────────────────────────────────────────────────
+  -- Phones resize the viewport as their toolbar shows/hides on every change
+  -- of scroll direction, which makes view() timelines on the page scroller
+  -- jump. Touch screens drop the two that track it: the section dim and the
+  -- itinerary label (the other reveals track their own overlay and are stable).
+  , "@media (hover: none) and (pointer: coarse) {"
+  , "  .image-section { animation: none; }"
+  , "  #itinerario [data-reveal] { animation: none; opacity: 1; transform: none; }"
+  , "}"
   , "@media (prefers-reduced-motion: reduce) {"
   , "  .intro { display: none !important; }"
   , "  .progress-bar { display: none; }"
@@ -1660,7 +1508,7 @@ siteCSS = T.unlines
   , "  .marquee-track { animation: none; }"
   , "  [data-reveal] { animation: none !important; opacity: 1; transform: none; }"
   , "  .fixed-nav { opacity: 1; transform: none; }"
-  , "  .itinerario-settle { animation: none !important; opacity: 1; transform: none; }"
+  , "  .itinerario-settle { transition: none; opacity: 1; transform: none; }"
   , "  .itinerario-sheen::after { animation: none !important; opacity: 0; }"
   , "  .itinerario-card, .itinerario-card::before { transition: none; }"
   , "}"
