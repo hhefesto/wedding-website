@@ -354,10 +354,11 @@ mediaInitH cfg var realIp req = do
   mid <- liftIO generateToken
   let stored = storedNameFor mid original
       uploader = T.take 80 <$> (nonEmpty =<< muiUploaderName req)
+      comment = nonEmpty . T.take 500 =<< nonEmpty =<< muiComment req
       contentType = T.take 120 (muiContentType req)
       mIp = realIp >>= nonEmpty >>= plausibleIp
   liftIO (beginUpload mcfg mid)
-  withDb var (\conn -> Db.insertMediaUpload conn mid kind original stored contentType size uploader mIp)
+  withDb var (\conn -> Db.insertMediaUpload conn mid kind original stored contentType size uploader comment mIp)
   pure (MediaUploadStarted mid mediaChunkSize)
 
 mediaStatusH :: AppConfig -> ConnVar -> Text -> Handler (NoStore MediaUploadProgress)
@@ -414,8 +415,8 @@ adminMediaListH :: ConnVar -> Maybe Text -> Handler [MediaAdmin]
 adminMediaListH var mCookie = do
   requireAdmin var mCookie
   rows <- withDb var Db.listAdminMedia
-  pure [ MediaAdmin mid kind original ctype size status hidden uploader ip (adminThumbUrl mid status) created
-       | (mid, kind, original, ctype, size, status, hidden, uploader, ip, created) <- rows ]
+  pure [ MediaAdmin mid kind original ctype size status hidden uploader comment ip (adminThumbUrl mid status) created
+       | (mid, kind, original, ctype, size, status, hidden, uploader, comment, ip, created) <- rows ]
 
 adminMediaHiddenH :: ConnVar -> Text -> Maybe Text -> MediaHiddenBody -> Handler NoContent
 adminMediaHiddenH var rawId mCookie body = do

@@ -171,8 +171,9 @@ galleryTile _ itemD = do
         _ -> "3 / 4"
       label = (if isVideo then "Ver video" else "Ver foto")
         <> maybe "" (" de " <>) (miUploaderName item)
+        <> maybe "" (": " <>) (miComment item)
   (btn, _) <- elAttr' "button"
-    ( "class" =: ("galeria-tile" <> if isVideo then " is-video" else "")
+    ( "class" =: ("galeria-tile" <> (if isVideo then " is-video" else "") <> (if isJust (miComment item) then " has-note" else ""))
    <> "type" =: "button"
    <> "style" =: ("aspect-ratio: " <> ratio)
    <> "aria-label" =: label
@@ -184,8 +185,12 @@ galleryTile _ itemD = do
       elAttr "span" ("class" =: "galeria-play" <> "aria-hidden" =: "true") blank
       forM_ (miDurationMs item) $ \d ->
         elAttr "span" ("class" =: "galeria-duration") $ text (formatDuration d)
-    forM_ (miUploaderName item) $ \n ->
-      elAttr "span" ("class" =: "galeria-credit") $ text n
+    when (isJust (miComment item) || isJust (miUploaderName item)) $
+      elAttr "span" ("class" =: "galeria-caption") $ do
+        forM_ (miComment item) $ \c ->
+          elAttr "span" ("class" =: "galeria-note") $ text ("\8220" <> c <> "\8221")
+        forM_ (miUploaderName item) $ \n ->
+          elAttr "span" ("class" =: "galeria-credit") $ text n
   pure (domEvent Click btn)
 
 formatDuration :: Int64 -> Text
@@ -221,7 +226,8 @@ lightboxView itemsD k = do
       pure (pb, never)
     Just item -> elAttr "div" ("class" =: "lightbox" <> "role" =: "dialog" <> "aria-modal" =: "true") $ do
       (backdrop, _) <- elAttr' "div" ("class" =: "lightbox-backdrop") blank
-      (frame, (closeB, prevB, nextB)) <- elAttr' "div" ("class" =: "lightbox-frame" <> "tabindex" =: "-1") $ do
+      let frameClass = "lightbox-frame" <> if isJust (miComment item) then " has-note" else ""
+      (frame, (closeB, prevB, nextB)) <- elAttr' "div" ("class" =: frameClass <> "tabindex" =: "-1") $ do
         elAttr "div" ("class" =: "lightbox-media") $
           case miVideoUrl item of
             Just url -> elAttr "video"
@@ -229,8 +235,12 @@ lightboxView itemsD k = do
              <> "controls" =: "" <> "playsinline" =: "" <> "autoplay" =: "" <> "preload" =: "metadata" ) blank
             Nothing -> elAttr "img"
               ( "class" =: "lightbox-img" <> "src" =: miDisplayUrl item <> "alt" =: "Foto de la boda" ) blank
-        forM_ (miUploaderName item) $ \n ->
-          elAttr "p" ("class" =: "lightbox-credit") $ text ("por " <> n)
+        when (isJust (miComment item) || isJust (miUploaderName item)) $
+          elAttr "div" ("class" =: "lightbox-caption") $ do
+            forM_ (miComment item) $ \c ->
+              elAttr "p" ("class" =: "lightbox-note") $ text ("\8220" <> c <> "\8221")
+            forM_ (miUploaderName item) $ \n ->
+              elAttr "p" ("class" =: "lightbox-credit") $ text ("por " <> n)
         (c, _) <- elAttr' "button" ("class" =: "lightbox-btn lightbox-close" <> "type" =: "button" <> "aria-label" =: "Cerrar") $ text "\215"
         (p, _) <- elAttr' "button" ("class" =: "lightbox-btn lightbox-prev" <> "type" =: "button" <> "aria-label" =: "M\225s nueva") $ text "\8592"
         (n, _) <- elAttr' "button" ("class" =: "lightbox-btn lightbox-next" <> "type" =: "button" <> "aria-label" =: "M\225s antigua") $ text "\8594"
@@ -274,6 +284,7 @@ data UpStatus = UpQueued | UpSending Int | UpRetrying | UpDone | UpFailed Text
 
 data UpEntry = UpEntry
   { ueMeta     :: FileMeta
+  , ueComment  :: Maybe Text
   , ueStatus   :: UpStatus
   , ueUploadId :: Maybe Text
   }
@@ -282,6 +293,7 @@ data UpEntry = UpEntry
 instance Eq UpEntry where
   a == b = ueStatus a == ueStatus b
         && ueUploadId a == ueUploadId b
+        && ueComment a == ueComment b
         && fmName (ueMeta a) == fmName (ueMeta b)
         && fmSize (ueMeta a) == fmSize (ueMeta b)
 
@@ -289,12 +301,12 @@ data UpMsg = UpMsg Int UpUpdate
 
 data UpUpdate = SetStatus UpStatus | SetUploadId (Maybe Text)
 
--- | Name field, file picker, and the live upload queue. Fires whenever a file
--- finishes uploading.
+-- | Name field, message box, file picker, and the live upload queue. Fires
+-- whenever a file finishes uploading.
 uploader :: MonadWidget t m => m (Event t ())
 uploader = mdo
   elAttr "p" ("class" =: "fotos-copy") $
-    text "Sube tus fotos y videos en calidad original. Puedes elegir varios a la vez."
+    text "Sube tus fotos y videos en calidad original. Puedes elegir varios a la vez y dejarles un mensaje."
   savedName <- liftJSM loadUploaderName
   nameEl <- inputElement $ def
     & inputElementConfig_initialValue .~ savedName
@@ -302,6 +314,14 @@ uploader = mdo
       ( "class" =: "rsvp-input fotos-name" <> "placeholder" =: "Tu nombre (opcional)"
      <> "maxlength" =: "80" <> "autocomplete" =: "name" <> "aria-label" =: "Tu nombre (opcional)" )
   performEvent_ $ liftJSM . saveUploaderName <$> updated (_inputElement_value nameEl)
+  -- The message goes with every file picked after typing it, then the box
+  -- clears so the next pick starts without one.
+  commentEl <- textAreaElement $ def
+    & textAreaElementConfig_setValue .~ ("" <$ metasE)
+    & textAreaElementConfig_elementConfig . elementConfig_initialAttributes .~
+      ( "class" =: "rsvp-input fotos-comment" <> "rows" =: "3" <> "maxlength" =: "500"
+     <> "placeholder" =: "Un mensaje para los novios (opcional)"
+     <> "aria-label" =: "Un mensaje para los novios (opcional)" )
   fileEl <- elAttr "label" ("class" =: "fotos-pick") $ do
     fi <- inputElement $ def
       & inputElementConfig_elementConfig . elementConfig_initialAttributes .~
@@ -320,25 +340,28 @@ uploader = mdo
     Input.setValue (_inputElement_raw fileEl) ("" :: Text)
     pure metas
   countD <- foldDyn (+) 0 (length <$> metasE)
-  let batchE = attachWith (\base ms -> zip [base ..] ms) (current countD) metasE
+  let batchE = attachWith
+        (\(base, comment) ms -> [ (i, meta, comment) | (i, meta) <- zip [base ..] ms ])
+        ((,) <$> current countD <*> (nonBlank <$> current (_textAreaElement_value commentEl)))
+        metasE
       retryJobsE = attachWithMaybe
         (\m i -> do
             e <- Map.lookup i m
             guard (isFailed (ueStatus e))
-            pure [(i, ueMeta e, ueUploadId e)])
+            pure [(i, ueMeta e, ueComment e, ueUploadId e)])
         (current entriesD) retryE
-      jobsE = leftmost [map (\(i, meta) -> (i, meta, Nothing)) <$> batchE, retryJobsE]
+      jobsE = leftmost [map (\(i, meta, comment) -> (i, meta, comment, Nothing)) <$> batchE, retryJobsE]
 
   sem <- liftIO (newQSem 2)
   msgE <- performEventAsync $ ffor (attach (current (_inputElement_value nameEl)) jobsE) $ \(name, jobs) emit -> do
     ctx <- askJSM
-    liftIO $ forM_ jobs $ \(i, meta, mUploadId) -> do
+    liftIO $ forM_ jobs $ \(i, meta, comment, mUploadId) -> do
       emit (UpMsg i (SetStatus UpQueued))
       forkIO $ bracket_ (waitQSem sem) (signalQSem sem) $
-        runJSM (uploadFile (nonBlank name) emit i meta mUploadId) ctx
+        runJSM (uploadFile (nonBlank name) comment emit i meta mUploadId) ctx
 
   entriesD <- foldDyn ($) Map.empty $ leftmost
-    [ (\batch m -> foldr (\(i, meta) -> Map.insert i (UpEntry meta UpQueued Nothing)) m batch) <$> batchE
+    [ (\batch m -> foldr (\(i, meta, comment) -> Map.insert i (UpEntry meta comment UpQueued Nothing)) m batch) <$> batchE
     , (\(UpMsg i u) -> Map.adjust (applyUpdate u) i) <$> msgE
     ]
 
@@ -362,6 +385,8 @@ queueRow entryD =
     elDynAttr "span" (ffor entryD $ \e -> "class" =: ("fotos-row-icon" <> if fmIsVideo (ueMeta e) then " is-video" else "") <> "aria-hidden" =: "true") blank
     elAttr "div" ("class" =: "fotos-row-main") $ do
       elAttr "p" ("class" =: "fotos-row-name") $ dynText (fmName . ueMeta <$> entryD)
+      elDynAttr "p" (ffor entryD $ \e -> "class" =: "fotos-row-comment" <> maybe ("hidden" =: "") (const mempty) (ueComment e)) $
+        dynText (maybe "" (\c -> "\8220" <> c <> "\8221") . ueComment <$> entryD)
       elAttr "div" ("class" =: "fotos-row-track") $
         elDynAttr "div" (ffor entryD $ \e -> "class" =: "fotos-row-bar" <> "style" =: ("transform: scaleX(" <> progressFraction (ueStatus e) <> ")")) blank
     elAttr "p" ("class" =: "fotos-row-status") $ dynText (statusText . ueStatus <$> entryD)
@@ -439,8 +464,8 @@ fileMeta f = do
 -- | Upload one file in chunks, resuming from whatever the server holds after
 -- any failure. Transient failures (no connection, 5xx, 409) back off and
 -- retry for about two minutes before asking the guest to tap "Reintentar".
-uploadFile :: Maybe Text -> (UpMsg -> IO ()) -> Int -> FileMeta -> Maybe Text -> JSM ()
-uploadFile uploaderName emit i meta mExisting = do
+uploadFile :: Maybe Text -> Maybe Text -> (UpMsg -> IO ()) -> Int -> FileMeta -> Maybe Text -> JSM ()
+uploadFile uploaderName comment emit i meta mExisting = do
   say (SetStatus (UpSending 0))
   started <- case mExisting of
     Just uid -> pure (Right (uid, defaultChunkSize))
@@ -457,7 +482,7 @@ uploadFile uploaderName emit i meta mExisting = do
 
     startUpload = do
       let body = TE.decodeUtf8 . BL.toStrict . encode $
-            MediaUploadInit (fmName meta) (fmType meta) size uploaderName
+            MediaUploadInit (fmName meta) (fmType meta) size uploaderName comment
       (st, resp) <- xhr "POST" "/api/media/uploads" [("Content-Type", "application/json")] (JsonBody body) Nothing
       pure $ case st of
         200 -> maybe (Fatal "Respuesta inesperada del servidor.")
@@ -684,7 +709,11 @@ fotosCSS = T.unlines
   , ".galeria-tile:focus-visible { outline: 2px solid #d4b483; outline-offset: 3px; }"
   , ".galeria-tile:active { transform: scale(.985); transition-duration: .15s; }"
   , "@keyframes tileArrive { from { opacity: 0; transform: translateX(-22px) scale(.95); } to { opacity: 1; transform: none; } }"
-  , ".galeria-credit { position: absolute; left: .8rem; right: .8rem; bottom: .7rem; z-index: 1; font-size: .7rem; letter-spacing: .08em; color: rgba(255,250,240,.92); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+  , ".galeria-tile.has-note::after { background: linear-gradient(to top, rgba(10,6,3,.82) 0%, rgba(10,6,3,.34) 38%, rgba(10,6,3,0) 62%); }"
+  , ".galeria-caption { position: absolute; left: .8rem; right: .8rem; bottom: .7rem; z-index: 1; display: grid; gap: .3rem; text-align: left; }"
+  , ".galeria-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: .8rem; line-height: 1.45; color: #fffaf0; overflow-wrap: anywhere; text-shadow: 0 1px 6px rgba(0,0,0,.45); }"
+  , ".galeria-credit { display: block; font-size: .7rem; letter-spacing: .08em; color: rgba(255,250,240,.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+  , ".galeria-note + .galeria-credit { color: #d4b483; }"
   , ".galeria-play { position: absolute; inset: 0; margin: auto; z-index: 1; width: 3.3rem; height: 3.3rem; border-radius: 50%; background: rgba(20,13,7,.42); border: 1px solid rgba(255,255,255,.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); transition: transform .5s cubic-bezier(.19,1,.22,1); }"
   , ".galeria-play::before { content: ''; position: absolute; top: 50%; left: 54%; transform: translate(-50%, -50%); border-style: solid; border-width: .52rem 0 .52rem .85rem; border-color: transparent transparent transparent #fff; }"
   , "@media (hover: hover) { .galeria-tile:hover .galeria-play { transform: scale(1.08); } }"
@@ -737,7 +766,11 @@ fotosCSS = T.unlines
   , ".lightbox-frame > * { pointer-events: auto; }"
   , ".lightbox-media { display: grid; place-items: center; max-width: 100%; max-height: 100%; animation: lbIn .5s cubic-bezier(.19,1,.22,1) both; }"
   , ".lightbox-img, .lightbox-video { display: block; max-width: min(100%, 1700px); max-height: calc(100svh - 8.4rem); width: auto; height: auto; border-radius: 4px; background: #000; box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(212,180,131,.12); }"
-  , ".lightbox-credit { position: absolute; left: 4rem; right: 4rem; bottom: 1.35rem; text-align: center; font-size: .78rem; letter-spacing: .12em; color: rgba(240,235,224,.78); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+  , ".lightbox-caption { position: absolute; left: 4rem; right: 4rem; bottom: 1.35rem; display: grid; gap: .35rem; justify-items: center; text-align: center; }"
+  , ".lightbox-note { max-width: 42rem; max-height: 4.5em; overflow-y: auto; overscroll-behavior: contain; font-size: .92rem; line-height: 1.5; color: #f8f1e4; white-space: pre-line; overflow-wrap: anywhere; }"
+  , ".lightbox-credit { max-width: 100%; font-size: .78rem; letter-spacing: .12em; color: rgba(240,235,224,.78); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+  , ".lightbox-frame.has-note { padding-bottom: 8rem; }"
+  , ".lightbox-frame.has-note .lightbox-img, .lightbox-frame.has-note .lightbox-video { max-height: calc(100svh - 12.2rem); }"
   , ".lightbox-btn { position: absolute; display: grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: 50%; border: 1px solid rgba(255,255,255,.26); background: rgba(28,20,16,.62); color: #f0ebe0; font: inherit; font-size: 1.15rem; cursor: pointer; transition: transform .3s cubic-bezier(.19,1,.22,1), border-color .3s; }"
   , ".lightbox-btn:hover { border-color: rgba(212,180,131,.75); }"
   , ".lightbox-btn:focus-visible { outline: 2px solid #d4b483; outline-offset: 2px; }"
@@ -748,7 +781,10 @@ fotosCSS = T.unlines
   , "@media (max-width: 760px) {"
   , "  .lightbox-frame { padding: 3.8rem .5rem 4.6rem; }"
   , "  .lightbox-prev, .lightbox-next { top: auto; bottom: .8rem; margin-top: 0; }"
-  , "  .lightbox-credit { bottom: 1.6rem; }"
+  , "  .lightbox-caption { bottom: 1.6rem; }"
+  , "  .lightbox-frame.has-note { padding-bottom: 9.4rem; }"
+  , "  .lightbox-frame.has-note .lightbox-caption { left: 1rem; right: 1rem; bottom: 4.3rem; }"
+  , "  .lightbox-frame.has-note .lightbox-img, .lightbox-frame.has-note .lightbox-video { max-height: calc(100svh - 13.6rem); }"
   , "}"
   , "@keyframes lbFade { from { opacity: 0; } to { opacity: 1; } }"
   , "@keyframes lbIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }"
@@ -784,6 +820,9 @@ fotosCSS = T.unlines
   , "}"
   , ".fotos-copy { font-size: .92rem; line-height: 1.7; color: rgba(240,235,224,.9); }"
   , ".fotos-name { margin-bottom: 0; text-align: center; font-size: .92rem; }"
+  -- 1rem keeps iOS from zooming into the box on focus.
+  , ".fotos-comment { display: block; margin-bottom: 0; min-height: 5.4rem; max-height: 14rem; resize: vertical; text-align: left; font-size: 1rem; line-height: 1.55; }"
+  , ".fotos-comment::placeholder { color: rgba(240,235,224,.55); }"
   , ".fotos-pick {"
   , "  position: relative;"
   , "  display: flex;"
@@ -821,6 +860,8 @@ fotosCSS = T.unlines
   , ".fotos-row-icon.is-video::before { inset: auto; top: 50%; left: 54%; border-radius: 0; border-style: solid; border-width: .4rem 0 .4rem .65rem; border-color: transparent transparent transparent #d4b483; transform: translate(-50%, -50%); }"
   , ".fotos-row-main { min-width: 0; }"
   , ".fotos-row-name { font-size: .78rem; color: rgba(240,235,224,.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+  , ".fotos-row-comment { margin-top: .15rem; font-size: .72rem; color: #d4b483; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+  , ".fotos-row-comment[hidden] { display: none; }"
   , ".fotos-row-track { margin-top: .38rem; height: 3px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; }"
   , ".fotos-row-bar { height: 100%; background: linear-gradient(90deg, #c9a46d, #efd7a8); transform-origin: left center; transform: scaleX(0); transition: transform .35s ease; }"
   , ".fotos-row.is-done .fotos-row-bar { background: #a9d1a3; }"

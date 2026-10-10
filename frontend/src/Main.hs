@@ -45,7 +45,10 @@ siteW = do
     progressBar
     heroSection
     itinerarioSection
-    rsvpSection
+    -- RSVP closed on the wedding day (2026-10-10). The section, its nav
+    -- link and its prefill script are kept but unwired; the backend and the
+    -- admin RSVP list are unchanged.
+    -- rsvpSection
     ubicacionSection
     dressCodeSection
     mesaRegalosSection
@@ -54,7 +57,7 @@ siteW = do
     fixedNav
     backToTop
   pb <- getPostBuild
-  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> settleOnViewJS <> ";" <> cardScrollIndicatorsJS <> ";" <> rsvpInlinePrefillJS)) <$ pb
+  performEvent_ $ liftJSM (void $ eval (navHighlightingJS <> ";" <> settleOnViewJS <> ";" <> cardScrollIndicatorsJS)) <$ pb
 
 -- ── Intro overlay ─────────────────────────────────────────────────────────────
 -- Full-screen panel that plays the invitation text then fades out.
@@ -175,7 +178,7 @@ fixedNav =
     navItems :: [(Text, Text)]
     navItems =
       [ ("#itinerario",    "ITINERARIO")
-      , ("#rsvp",          "RSVP")
+      -- , ("#rsvp",          "RSVP")   -- RSVP closed (see siteW)
       , ("#ubicacion",     "UBICACI\211N")
       , ("#dress-code",    "DRESS CODE")
       , ("#mesa-regalos",  "REGALOS")

@@ -239,6 +239,8 @@ adminMediaRow mediaDyn =
       el "strong" $ dynText (maOriginalFilename <$> mediaDyn)
       el "p" $ dynText (mediaMeta <$> mediaDyn)
       el "p" $ dynText (mediaSource <$> mediaDyn)
+      elDynAttr "p" (ffor mediaDyn $ \m -> "class" =: "admin-media-comment" <> maybe ("hidden" =: "") (const mempty) (maComment m)) $
+        dynText (maybe "" (\c -> "\8220" <> c <> "\8221") . maComment <$> mediaDyn)
     (hideBtn, deleteBtn) <- elAttr "div" ("class" =: "admin-row-actions") $ do
       (h, _) <- elAttr' "button" ("class" =: "admin-btn small ghost" <> "type" =: "button") $
         dynText (ffor mediaDyn $ \m -> if maHidden m then "Mostrar" else "Ocultar")
@@ -524,6 +526,8 @@ adminCSS = T.unlines
   , ".admin-media-thumb.is-empty { visibility: visible; }"
   , ".admin-media-body strong { color: #fff; font-weight: 400; word-break: break-all; }"
   , ".admin-media-body p { margin-top: .25rem; color: rgba(255,255,255,.65); font-size: .78rem; line-height: 1.45; }"
+  , ".admin-media-body .admin-media-comment { color: #f3e6cf; white-space: pre-line; overflow-wrap: anywhere; }"
+  , ".admin-media-comment[hidden] { display: none; }"
   , ".admin-media .admin-row-actions { justify-content: flex-start; }"
   , "@media (max-width: 760px) { .admin-top { align-items: flex-start; flex-direction: column; } .admin-actions { justify-content: flex-start; } .admin-grid { grid-template-columns: 1fr; } .admin-row { align-items: flex-start; flex-direction: column; } .admin-inline-form { grid-template-columns: 1fr; } }"
   ]

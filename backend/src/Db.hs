@@ -557,11 +557,11 @@ data MediaUploadRow = MediaUploadRow
   }
 
 insertMediaUpload
-  :: Connection -> Text -> MediaKind -> Text -> Text -> Text -> Int64 -> Maybe Text -> Maybe Text -> IO ()
-insertMediaUpload conn mid kind original stored contentType size uploader mIp =
+  :: Connection -> Text -> MediaKind -> Text -> Text -> Text -> Int64 -> Maybe Text -> Maybe Text -> Maybe Text -> IO ()
+insertMediaUpload conn mid kind original stored contentType size uploader comment mIp =
   void $ execute conn
-    "INSERT INTO guest_media (id, kind, original_filename, stored_filename, content_type, size_bytes, uploader_name, ip_address) VALUES (?::uuid, ?, ?, ?, ?, ?, ?, ?::inet)"
-    (mid, kindToText kind, original, stored, contentType, size, uploader, mIp)
+    "INSERT INTO guest_media (id, kind, original_filename, stored_filename, content_type, size_bytes, uploader_name, comment, ip_address) VALUES (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?::inet)"
+    (mid, kindToText kind, original, stored, contentType, size, uploader, comment, mIp)
 
 getMediaUpload :: Connection -> Text -> IO (Maybe MediaUploadRow)
 getMediaUpload conn mid = do
@@ -600,26 +600,26 @@ listProcessingMedia conn = do
   pure [ (mid, kindFromText kind) | (mid, kind) <- rows ]
 
 -- | Published gallery items, newest first:
--- (id, kind, width, height, duration ms, uploader, ready-at epoch ms).
-listPublicMedia :: Connection -> IO [(Text, MediaKind, Maybe Int, Maybe Int, Maybe Int64, Maybe Text, Int64)]
+-- (id, kind, width, height, duration ms, uploader, comment, ready-at epoch ms).
+listPublicMedia :: Connection -> IO [(Text, MediaKind, Maybe Int, Maybe Int, Maybe Int64, Maybe Text, Maybe Text, Int64)]
 listPublicMedia conn = do
   rows <- query_ conn
-    ("SELECT id::text, kind, width, height, duration_ms, uploader_name, " <>
+    ("SELECT id::text, kind, width, height, duration_ms, uploader_name, comment, " <>
      "(EXTRACT(EPOCH FROM ready_at) * 1000)::bigint " <>
      "FROM guest_media WHERE status = 'ready' AND NOT hidden ORDER BY ready_at DESC LIMIT 500")
-  pure [ (mid, kindFromText kind, w, h, d, u, t) | (mid, kind, w, h, d, u, t) <- rows ]
+  pure [ (mid, kindFromText kind, w, h, d, u, cm, t) | (mid, kind, w, h, d, u, cm, t) <- rows ]
 
 -- | Admin view: (id, kind, original name, content type, size, status, hidden,
--- uploader, ip, created at).
+-- uploader, comment, ip, created at).
 listAdminMedia
   :: Connection
-  -> IO [(Text, MediaKind, Text, Text, Int64, Text, Bool, Maybe Text, Maybe Text, Text)]
+  -> IO [(Text, MediaKind, Text, Text, Int64, Text, Bool, Maybe Text, Maybe Text, Maybe Text, Text)]
 listAdminMedia conn = do
   rows <- query_ conn
     ("SELECT id::text, kind, original_filename, content_type, size_bytes, status, hidden, " <>
-     "uploader_name, ip_address::text, created_at::text FROM guest_media ORDER BY created_at DESC")
-  pure [ (mid, kindFromText kind, o, c, s, st, h, u, ip, cr)
-       | (mid, kind, o, c, s) :. (st, h, u, ip, cr) <- rows ]
+     "uploader_name, comment, ip_address::text, created_at::text FROM guest_media ORDER BY created_at DESC")
+  pure [ (mid, kindFromText kind, o, c, s, st, h, u, cm, ip, cr)
+       | (mid, kind, o, c, s) :. (st, h, u, cm, ip, cr) <- rows ]
 
 setMediaHidden :: Connection -> Text -> Bool -> IO Bool
 setMediaHidden conn mid hidden = do

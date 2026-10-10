@@ -294,8 +294,8 @@ previewName mid = T.unpack mid <> "-preview.mp4"
 filesUrl :: FilePath -> Text
 filesUrl name = "/api/media/files/" <> T.pack name
 
-mediaItem :: (Text, MediaKind, Maybe Int, Maybe Int, Maybe Int64, Maybe Text, Int64) -> MediaItem
-mediaItem (mid, kind, w, h, d, uploader, readyAt) = MediaItem
+mediaItem :: (Text, MediaKind, Maybe Int, Maybe Int, Maybe Int64, Maybe Text, Maybe Text, Int64) -> MediaItem
+mediaItem (mid, kind, w, h, d, uploader, comment, readyAt) = MediaItem
   { miId           = mid
   , miKind         = kind
   , miThumbUrl     = filesUrl (thumbName mid)
@@ -309,6 +309,7 @@ mediaItem (mid, kind, w, h, d, uploader, readyAt) = MediaItem
   , miHeight       = h
   , miDurationMs   = d
   , miUploaderName = uploader
+  , miComment      = comment
   , miReadyAtMs    = readyAt
   }
 

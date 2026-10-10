@@ -401,6 +401,7 @@ data MediaUploadInit = MediaUploadInit
   , muiContentType  :: Text
   , muiSize         :: Int64
   , muiUploaderName :: Maybe Text
+  , muiComment      :: Maybe Text
   } deriving (Eq, Show, Generic)
 
 instance ToJSON MediaUploadInit where
@@ -409,6 +410,7 @@ instance ToJSON MediaUploadInit where
     , "contentType"  .= muiContentType m
     , "size"         .= muiSize m
     , "uploaderName" .= muiUploaderName m
+    , "comment"      .= muiComment m
     ]
 
 instance FromJSON MediaUploadInit where
@@ -418,6 +420,7 @@ instance FromJSON MediaUploadInit where
       <*> o .:? "contentType" .!= ""
       <*> o .:  "size"
       <*> o .:? "uploaderName"
+      <*> o .:? "comment"
 
 data MediaUploadStarted = MediaUploadStarted
   { musId        :: Text
@@ -456,6 +459,7 @@ data MediaItem = MediaItem
   , miHeight       :: Maybe Int
   , miDurationMs   :: Maybe Int64
   , miUploaderName :: Maybe Text
+  , miComment      :: Maybe Text
   , miReadyAtMs    :: Int64
   } deriving (Eq, Show, Generic)
 
@@ -470,6 +474,7 @@ instance ToJSON MediaItem where
     , "height"       .= miHeight m
     , "durationMs"   .= miDurationMs m
     , "uploaderName" .= miUploaderName m
+    , "comment"      .= miComment m
     , "readyAtMs"    .= miReadyAtMs m
     ]
 
@@ -485,6 +490,7 @@ instance FromJSON MediaItem where
       <*> o .:? "height"
       <*> o .:? "durationMs"
       <*> o .:? "uploaderName"
+      <*> o .:? "comment"
       <*> o .:  "readyAtMs"
 
 data MediaAdmin = MediaAdmin
@@ -496,6 +502,7 @@ data MediaAdmin = MediaAdmin
   , maStatus           :: Text
   , maHidden           :: Bool
   , maUploaderName     :: Maybe Text
+  , maComment          :: Maybe Text
   , maIpAddress        :: Maybe Text
   , maThumbUrl         :: Maybe Text
   , maCreatedAt        :: Text
@@ -511,6 +518,7 @@ instance ToJSON MediaAdmin where
     , "status"           .= maStatus m
     , "hidden"           .= maHidden m
     , "uploaderName"     .= maUploaderName m
+    , "comment"          .= maComment m
     , "ipAddress"        .= maIpAddress m
     , "thumbUrl"         .= maThumbUrl m
     , "createdAt"        .= maCreatedAt m
@@ -527,6 +535,7 @@ instance FromJSON MediaAdmin where
       <*> o .:  "status"
       <*> o .:  "hidden"
       <*> o .:? "uploaderName"
+      <*> o .:? "comment"
       <*> o .:? "ipAddress"
       <*> o .:? "thumbUrl"
       <*> o .:  "createdAt"
